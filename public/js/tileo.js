@@ -5709,8 +5709,8 @@ function updateAudio(dt) {
 
 /* ---- 85_net.js ---- */
 /* ================= shared multiplayer: everyone playing right now ================= */
-/* Two transports with one shape: the claude.ai room capability (inside Claude), or peer-to-peer WebRTC
-   (Trystero, signaling over public Nostr relays) when the game is hosted on an ordinary website. */
+/* Three transports with one shape: the claude.ai room capability (inside Claude); the TILEO multiplayer server
+   over a WebSocket when the website sets window.TILEO_RELAY_URL; otherwise peer-to-peer WebRTC (Trystero). */
 const Net = { kind: '', room: null, connected: false, me: null, remotes: new Map(), sendT: 0, last: '', say: null, sayT: 0, cabin: '', cabinDirty: true, triv: null };
 const NET_ANIMS = new Set(['idle', 'walk', 'air', 'swim', 'tread', 'soak', 'lie', 'sit', 'dance', 'wave', 'cheer', 'pose', 'yoga', 'slide', 'zip', 'drink', 'shootAim', 'shoot', 'gaze', 'talk', 'surf', 'tumble', 'putt', 'slot', 'cards']);
 const NET_HELD = new Set(['cup', 'cone', 'slice', 'burger', 'hotdog', 'fries', 'cupcake', 'taco', 'coconut', 'bottle', 'fruitcup', 'cookie', 'putter']);
@@ -5720,6 +5720,7 @@ const num = (v, a, b, d = 0) => (typeof v === 'number' && isFinite(v)) ? clamp(v
 async function initNet() {
   let room = null;
   if (window.claude && typeof window.claude.use === 'function') { try { room = await window.claude.use('room'); } catch (e) { room = null; } if (room) Net.kind = 'room'; }
+  if (!room && window.TILEO_RELAY_URL) { room = makeWSRoom(window.TILEO_RELAY_URL); if (room) Net.kind = 'ws'; }
   if (!room) { room = makeP2PRoom(); if (room) Net.kind = 'p2p'; }
   if (!room) return;
   Net.room = room;
@@ -5793,6 +5794,61 @@ function makeP2PRoom() {
     }
   };
 }
+/* ---------- multiplayer server transport (WebSocket relay) ---------- */
+function makeWSRoom(url) {
+  if (!window.WebSocket || typeof url !== 'string' || !/^wss?:\/\//.test(url)) return null;
+  const httpBase = url.replace(/^ws/, 'http').replace(/\/ws\/?$/, '');
+  const peers = new Map();
+  let ws = null, mine = null, peersCb = null, connCb = null, code = shipFromHash(), deck = 0, myId = 'me', open = false, tries = 0, timer = null;
+  const meEntry = () => ({ peer: myId, isMe: true, sameTab: true, kind: 'viewer', presence: mine || {} });
+  const emit = left => {
+    if (!peersCb) return;
+    const list = [meEntry()];
+    for (const [id, d] of peers) list.push({ peer: id, isMe: false, sameTab: false, kind: 'viewer', guest: false, presence: d });
+    try { peersCb({ peers: list, left: left || [] }); } catch (e) { console.error(e); }
+  };
+  const clearPeers = () => { const left = [...peers.keys()].map(peer => ({ peer })); peers.clear(); if (left.length) emit(left); };
+  const setConn = v => { open = v; if (connCb) connCb(v); };
+  const sendRaw = o => { if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(o)); } catch (e) { } } };
+  const setHash = c => { try { history.replaceState(null, '', location.pathname + location.search + (c ? '#ship=' + c : '')); } catch (e) { } };
+  const okObj = d => d && typeof d === 'object' && !Array.isArray(d);
+  const handle = m => {
+    if (!okObj(m)) return;
+    if (m.t === 'welcome') {
+      myId = typeof m.id === 'string' ? m.id : 'me'; deck = m.deck | 0;
+      if (!m.ship && code) { code = ''; setHash(''); }
+      clearPeers();
+      for (const p of Array.isArray(m.peers) ? m.peers : []) if (p && typeof p.id === 'string' && okObj(p.d)) peers.set(p.id, p.d);
+      setConn(true); if (mine) sendRaw({ t: 'p', d: mine }); emit();
+    } else if (m.t === 'p' && typeof m.id === 'string' && okObj(m.d)) { peers.set(m.id, m.d); emit(); }
+    else if (m.t === 'leave' && typeof m.id === 'string') { if (peers.delete(m.id)) emit([{ peer: m.id }]); }
+    else if (m.t === 'full') toast('That private ship is full', 'You are on a public deck instead.');
+  };
+  const retry = () => { clearTimeout(timer); const d = Math.min(15000, 1000 * Math.pow(1.6, tries++)); timer = setTimeout(connect, d); };
+  function connect() {
+    clearTimeout(timer); timer = null;
+    let sock; try { sock = new WebSocket(url); } catch (e) { retry(); return; }
+    ws = sock;
+    sock.onopen = () => { tries = 0; sendRaw({ t: 'join', ship: code }); };
+    sock.onmessage = ev => { if (typeof ev.data !== 'string' || ev.data.length > 70000) return; let m; try { m = JSON.parse(ev.data); } catch (e) { return; } handle(m); };
+    sock.onclose = () => { if (ws !== sock) return; ws = null; if (open) setConn(false); clearPeers(); retry(); };
+    sock.onerror = () => { };
+  }
+  // a free server sleeps when nobody plays; a light check-in while connected keeps it awake for the people aboard
+  setInterval(() => { if (open && !document.hidden) fetch(httpBase + '/health', { cache: 'no-store', mode: 'cors' }).catch(() => { }); }, 240000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !ws) connect(); });
+  window.addEventListener('hashchange', () => { const c = shipFromHash(); if (c !== code) { code = c; clearPeers(); sendRaw({ t: 'join', ship: code }); } });
+  window.addEventListener('pagehide', () => { try { ws && ws.close(); } catch (e) { } });
+  connect();
+  return {
+    kind: 'ws',
+    get code() { return code; }, get deck() { return deck || 1; },
+    presence(p) { mine = p; sendRaw({ t: 'p', d: p }); return Promise.resolve(); },
+    onPeers(cb) { peersCb = cb; emit(); },
+    onConnection(cb) { connCb = cb; cb(open); },
+    switchShip(c) { code = c && SHIP_RE.test(c) ? c : ''; setHash(code); clearPeers(); sendRaw({ t: 'join', ship: code }); }
+  };
+}
 function newShipCode() { const a = 'abcdefghjkmnpqrstuvwxyz23456789'; let s = ''; const r = new Uint32Array(6); crypto.getRandomValues(r); for (const v of r) s += a[v % a.length]; return s; }
 function inviteLink(code) { return location.origin + location.pathname + location.search + '#ship=' + code; }
 async function copyInvite(code) {
@@ -5837,7 +5893,7 @@ function myLoc() {
 function netCabinChanged() { Net.cabinDirty = true; }
 const QUICK_SAYS = ['Hi!', 'Follow me!', 'Meet at the pool', 'Dance party in the dome!', 'Race you down the slides', 'Nice outfit!', 'Want to visit my suite?', 'See you ashore!', 'Good game!', 'Bye!'];
 // On the open public deck (strangers on the internet) chat is limited to friendly preset phrases; private ships allow free text.
-function publicChatOnly() { return Net.kind === 'p2p' && Net.room && !Net.room.code; }
+function publicChatOnly() { return (Net.kind === 'p2p' || Net.kind === 'ws') && Net.room && !Net.room.code; }
 function netSay(text) {
   const x = cleanText(text, 80); if (!x) return;
   if (publicChatOnly() && !QUICK_SAYS.includes(x)) { toast('Free chat is for private ships', 'Start a private ship from this sheet to chat freely with friends.'); return; }
@@ -5914,14 +5970,14 @@ function peopleSheet() {
     if (R.loc.startsWith('suite:') && R.cabin && myLoc() !== R.loc) btn = `<button class="btn btn-glass" data-go="${esc(R.peer)}">Visit suite</button>`;
     return `<div class="person"><span class="pdot ${R.loc === myLoc() ? 'here' : ''}"></span><div><b>${esc(R.name)}${R.guest ? ' <small>guest</small>' : ''}</b><small>${esc(locLabel(R.loc))}</small></div>${btn}</div>`;
   }).join('');
-  const p2p = Net.kind === 'p2p', code = p2p ? Net.room.code : '', pub = publicChatOnly();
+  const p2p = Net.kind === 'p2p' || Net.kind === 'ws', code = p2p ? Net.room.code : '', pub = publicChatOnly();
   const quick = pub ? QUICK_SAYS : QUICK_SAYS.slice(0, 6);
   const shipRow = !p2p ? '' : code
     ? `<div class="shipbar"><div><b>Private ship · ${esc(code.toUpperCase())}</b><small>Only people with your invite link sail here</small></div><button class="btn btn-primary" id="shipCopy">Copy invite link</button><button class="btn btn-glass" id="shipPublic">Public deck</button></div>`
     : `<div class="shipbar"><div><b>Public deck ${Net.room.deck}</b><small>Anyone playing right now can appear here</small></div><button class="btn btn-primary" id="shipNew">Start a private ship</button></div>`;
   const emptyMsg = p2p ? (code ? 'No one else is aboard yet. Copy your invite link and send it to friends.' : 'No one else is on this deck right now. Start a private ship and invite friends, or check back later.') : 'No one else is aboard yet. Share this game with friends from the Share menu and they will appear here.';
-  const privacy = p2p ? 'Your name, look and position are shared with the other players on this deck, peer to peer. Like any peer-to-peer game, connected players can see your network address.' : 'Your name, look and position are shared with everyone viewing this page right now. Messages appear as speech bubbles.';
-  sheet('Passengers online', Net.connected ? `${Net.remotes.size + 1} aboard right now` : 'Connecting…', shipRow + me + (others || `<p class="empty">${emptyMsg}</p>`) + `
+  const privacy = Net.kind === 'ws' ? 'Your name, look and position are shared with the other players on this deck through the TILEO server. Nothing is saved.' : p2p ? 'Your name, look and position are shared with the other players on this deck, peer to peer. Like any peer-to-peer game, connected players can see your network address.' : 'Your name, look and position are shared with everyone viewing this page right now. Messages appear as speech bubbles.';
+  sheet('Passengers online', Net.connected ? `${Net.remotes.size + 1} aboard right now` : Net.kind === 'ws' ? 'Connecting to the ship… the server can take up to a minute to wake up' : 'Connecting…', shipRow + me + (others || `<p class="empty">${emptyMsg}</p>`) + `
     ${pub ? '' : '<div class="chatbox"><input id="chatIn" maxlength="80" placeholder="Say something to people nearby" enterkeyhint="send"><button class="btn btn-primary" id="chatSend">Say</button></div>'}
     <div class="chips">${quick.map(q => `<button class="chip" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
     <input id="inviteUrl" class="invite-url" readonly hidden aria-label="Invite link">
