@@ -1,0 +1,17 @@
+# Render Blueprint: TILEO Cruise Lines as a free static site.
+services:
+  - type: web
+    name: tileo-cruise
+    runtime: static
+    buildCommand: echo "Prebuilt static site - nothing to build"
+    staticPublishPath: ./public
+    headers:
+      - path: /music/*
+        name: Cache-Control
+        value: public, max-age=604800
+      - path: /vendor/*
+        name: Cache-Control
+        value: public, max-age=604800
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
