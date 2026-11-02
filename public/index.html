@@ -104,6 +104,14 @@ input{font:inherit}
 .btn-glass{background:rgba(255,255,255,.1);border:1px solid var(--line);color:var(--foam)}
 .btn-wide{flex:1}
 .hint{font-size:12px;color:#5d6f86}
+.acct{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 18px 2px;padding:9px 12px;border-radius:12px;background:#e9f1f8;font-size:13px;color:#3c5068}
+.acct b{color:var(--ink)}.link{color:#0f6a8a;font-weight:700;font-size:14px;padding:4px 2px;white-space:nowrap}
+.auth-body{display:flex;flex-direction:column;gap:8px;padding:6px 18px 18px}
+.auth-body .lbl{margin-top:4px}.auth-seg{align-self:stretch;margin-bottom:4px}.auth-seg button{flex:1}
+#authCard .seg{background:#e3ebf3}#authCard .seg button{color:#3c5068}#authCard .seg button[aria-pressed="true"]{background:#fff;color:var(--ink)}
+.auth-err{min-height:18px;margin:0;font-size:13px;color:#c0392b;font-weight:600}
+.auth-or{display:flex;align-items:center;gap:10px;color:#7d8da1;font-size:12px}.auth-or:before,.auth-or:after{content:"";flex:1;height:1px;background:#d3dde8}
+.gbtn{display:flex;justify-content:center;min-height:44px}
 .welcome-name{font-family:var(--f-display);font-weight:700;font-size:22px;line-height:1.15;text-wrap:balance}
 @media (max-height:560px){
   #boarding{flex-direction:row;align-items:flex-end;gap:16px}
@@ -401,6 +409,7 @@ input[type=range]{accent-color:var(--coral);width:140px}
       <svg viewBox="0 0 46 26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M3 20h36l-4-7H8z"/><path d="M12 13V7h16v6M17 7V3h6v4"/><path d="M2 24c4 0 4-2 8-2s4 2 8 2 4-2 8-2 4 2 8 2 4-2 8-2"/></svg>
       <div class="to"><div class="code">NWH</div><div class="city">Nowhere (and back)</div></div>
     </div>
+    <div class="acct" id="acctBar" hidden></div>
     <div id="passNew">
       <div class="pass-body">
         <div><label class="lbl" for="passName">Passenger name</label><input class="field" id="passName" maxlength="18" placeholder="Your name" enterkeyhint="go"></div>
@@ -413,7 +422,7 @@ input[type=range]{accent-color:var(--coral);width:140px}
       <div class="perf"></div>
       <div class="pass-foot">
         <button class="btn btn-primary btn-wide" type="submit" id="checkIn">Check in</button>
-        <span class="hint">Your passenger profile and stamps save on this device.</span>
+        <span class="hint" id="passHint">Your passenger profile and stamps save on this device.</span>
       </div>
     </div>
     <div id="passBack" hidden>
@@ -433,6 +442,7 @@ input[type=range]{accent-color:var(--coral);width:140px}
       </div>
     </div>
   </form>
+  <div class="pass" id="authCard" hidden></div>
 </div>
 
 <div id="creator" hidden>
@@ -511,6 +521,6 @@ input[type=range]{accent-color:var(--coral);width:140px}
 <script src="vendor/SkeletonUtils.js"></script>
 <script src="vendor/p2p.js"></script>
 <script src="config.js?v=1a8596799f"></script>
-<script src="js/tileo.js?v=b515dc421f"></script>
+<script src="js/tileo.js?v=13cd194c48"></script>
 </body>
 </html>

@@ -837,7 +837,7 @@ function updateCinePost(P, scene, camera) {
   u.exposure.value = (G.exposure || 1) * (1 - gold * 0.12); u.time.value = G.time % 100; u.warm.value = 0.035 + gold * 0.11; u.sat.value = 1.08 + gold * 0.16; u.aspect.value = innerWidth / innerHeight;
   // sun glare: only outdoors in the game world, with the sun above the horizon and in front of the camera
   let on = 0;
-  if (P.ao && P.ao.enabled && scene === G.scene && Env.sunDir.y > -0.02) {
+  if (P.ao && P.ao.enabled && scene === G.scene && Env.sunDir.y > -0.02 && !G.underwater) {
     const p = NG.lastSun.copy(Env.sunDir).multiplyScalar(3000).add(camera.position).project(camera);
     if (p.z < 1 && Math.abs(p.x) < 1.3 && Math.abs(p.y) < 1.3) { u.sunUV.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5); on = smooth(-0.02, 0.06, Env.sunDir.y) * (0.55 + gold * 0.9) * (1 - n); }
     u.tSunDepth.value = P.ao.depthRT.texture;
@@ -1188,6 +1188,10 @@ function updateEnvironment(dt, minutes, focus) {
   G.exposure = lerp(0.62, 0.92, night) + Env.golden * 0.04;
   G.scene.fog.color.copy(Env.horizon);
   G.scene.fog.density = lerp(0.00016, 0.00028, night);
+  // snorkeling: a blue-green underwater world (no sky, dense water fog)
+  const uw = G.underwater;
+  if (!!uw !== !!Env.wasUnder) { Env.wasUnder = !!uw; for (const o of [Env.sky, Env.tint, Env.stars, Env.moon, Env.moonGlow, G.ocean]) if (o) o.visible = !uw; G.scene.background = uw ? uw.color : null; }
+  if (uw) { G.scene.fog.color.copy(uw.color); G.scene.fog.density = uw.density; }
   // shadow frustum follows the focus point
   const ext = G.shadowExtent || 40;
   const sc = G.sun.shadow.camera;
@@ -2154,6 +2158,7 @@ function buildWaterpark(ship) {
   addBoxCollider(tx, tz, 4.0, 4.0, 51.5, ty - 1);
   addHotspot('tower_up', tx, DK.top, tz + 4.9, 2.4, 'Climb the slide tower', 'towerUp');
   addHotspot('tower_down', tx + 0.6, ty, tz + 3.1, 1.4, 'Take the stairs down', 'towerDown');
+  addHotspot('tower_pick', tx, ty, tz, 3.2, 'Pick a slide', 'slides');
   // slides
   const supports = [];
   SLIDE_DEFS.forEach((def, idx) => {
@@ -2347,6 +2352,58 @@ function collide(pos, radius, y0, y1) {
     }
   }
   return hit;
+}
+/* ---------- pool edges: keep swimmers off the walls and climb out onto the deck ---------- */
+const _inner = new Map();
+function poolMargin(w) { return w.hot || w.shallow ? 0.42 : 0.95; }
+function poolInner(w, m = poolMargin(w)) { let c = _inner.get(w); if (!c) _inner.set(w, c = {}); return c[m] || (c[m] = offsetPoly(w.poly, -m)); }
+function segInside(poly, x0, z0, x1, z1) { for (let i = 1; i <= 8; i++) { const t = i / 8; if (!pip(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, poly)) return false; } return true; }
+function nearestEdge(poly, x, z) {
+  let best = null, bd = 1e9;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[j], b = poly[i], dx = b[0] - a[0], dz = b[1] - a[1], L = dx * dx + dz * dz || 1e-9;
+    const t = clamp(((x - a[0]) * dx + (z - a[1]) * dz) / L, 0, 1), qx = a[0] + dx * t, qz = a[1] + dz * t, d = Math.hypot(qx - x, qz - z);
+    if (d < bd) { bd = d; best = [qx, qz, d]; }
+  }
+  return best;
+}
+function rayEdge(poly, x, z, dx, dz) {
+  let bt = 1e9;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[j], b = poly[i], ex = b[0] - a[0], ez = b[1] - a[1], den = dx * ez - dz * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const t = ((a[0] - x) * ez - (a[1] - z) * ex) / den, u = ((a[0] - x) * dz - (a[1] - z) * dx) / den;
+    if (t > 0 && u >= 0 && u <= 1 && t < bt) bt = t;
+  }
+  return bt < 1e9 ? [x + dx * bt, z + dz * bt, bt] : null;
+}
+// the deck just past edge point (qx,qz) in outward direction (ox,oz), if a swimmer can step out there
+function poolExitAt(w, qx, qz, ox, oz) {
+  const ex = qx + ox * 0.6, ez = qz + oz * 0.6;
+  if (pip(ex, ez, w.poly) || waterAt(ex, ez)) return null;
+  const gy = groundAt(ex, ez, w.top + 1.25, 1.7);
+  if (!(gy > -1e8) || gy > w.top + 1.2 || gy < w.top - 0.6) return null;
+  if (clearance(ex, ez, gy + 0.25, gy + 1.6, 0.6) < 0.32) return null;
+  return [ex, gy, ez];
+}
+// nearest place along the pool's edge where a swimmer can climb out
+function nearestPoolExit(w, x, z, check) {
+  let best = null, bd = 1e9; const P = w.poly;
+  for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+    const a = P[j], b = P[i], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 1e-3) continue;
+    let nx = (b[1] - a[1]) / L, nz = -(b[0] - a[0]) / L;
+    const n = Math.max(1, Math.round(L / 1.2));
+    for (let k = 0; k < n; k++) {
+      const t = (k + 0.5) / n, qx = a[0] + (b[0] - a[0]) * t, qz = a[1] + (b[1] - a[1]) * t;
+      if (pip(qx + nx * 0.3, qz + nz * 0.3, P)) { nx = -nx; nz = -nz; }
+      const d = Math.hypot(qx - x, qz - z); if (d >= bd) continue;
+      const ex = poolExitAt(w, qx, qz, nx, nz); if (!ex || (check && !check(ex))) continue;
+      const ix = qx - nx * poolMargin(w), iz = qz - nz * poolMargin(w);
+      if (!pip(ix, iz, w.poly)) continue;
+      bd = d; best = { edge: [qx, qz], out: ex, inside: [ix, iz], dir: [nx, nz] };
+    }
+  }
+  return best;
 }
 function clearance(x, z, y0, y1, maxD = 2) {
   let best = maxD;
@@ -3033,6 +3090,11 @@ function buildPort(P) {
     const roof = new T.Mesh(box(6.4, 0.12, 3.0), MAT.coral); roof.position.set(1, 2.5, 0); tb.add(roof);
     g.add(tb); G.tender = tb; }
   addHotspot('tender', pierX1 + 2.5, deckY, pz, 2.6, 'Take the tender back to the ship', 'tender');
+  // excursions desk where the pier meets the beach
+  { const ex = pierX0 - 6, ey = deckY, ez = pz + 1.2;
+    B.add('white', box(1.6, 1.0, 0.7), ex, ey + 0.5, ez + 0.6); B.add('coral', box(1.8, 0.08, 0.9), ex, ey + 1.04, ez + 0.6);
+    B.add('lagoon', box(1.9, 0.5, 0.06), ex, ey + 2.3, ez + 0.95); B.add('white', cyl(0.05, 0.05, 1.4, 6), ex - 0.85, ey + 1.6, ez + 0.95); B.add('white', cyl(0.05, 0.05, 1.4, 6), ex + 0.85, ey + 1.6, ez + 0.95);
+    addHotspot('excursions', ex, ey, ez - 0.6, 2.6, 'Book an excursion', 'excursions'); }
   // beach bar
   { const bx = feat.bar.x, bz = feat.bar.z, by = feat.bar.y;
     for (const [dx, dz] of [[-2.6, -2.6], [2.6, -2.6], [-2.6, 2.6], [2.6, 2.6]]) B.add('plank', cyl(0.12, 0.14, 3.2, 8), bx + dx, by + 1.6, bz + dz);
@@ -4215,7 +4277,7 @@ function initPlayer(app) {
   setRealBody(c, app.real, G.scene, { size: 1024, smile: 0.7 });
 }
 function placePlayer(x, y, z, yaw) {
-  Player.pos.set(x, y, z); Player.velY = 0; Player.yaw = yaw; Player.mode = 'walk'; Player.water = null; Player.onGround = true;
+  Player.pos.set(x, y, z); Player.velY = 0; Player.yaw = yaw; Player.mode = 'walk'; Player.water = null; Player.onGround = true; Player.climb = null;
   Player.lastSafe.set(x, y, z);
   Cam.yaw = yaw + Math.PI; Cam.pitch = 0.3; Cam.pos.set(x - Math.sin(yaw) * 6, y + 3, z - Math.cos(yaw) * 6); Cam.look.set(x, y + 1.4, z);
 }
@@ -4238,13 +4300,42 @@ function updatePlayer(dt) {
   let vx = 0, vz = 0;
   if (moving) { const L = Math.hypot(mx, mz) || 1; vx = mx / L * speed * Math.max(mag, 0.35); vz = mz / L * speed * Math.max(mag, 0.35); P.yaw = dampAngle(P.yaw, Math.atan2(vx, vz), 12, dt); }
   const nx = P.pos.x + vx * dt, nz = P.pos.z + vz * dt;
+  if (P.climb) {
+    // climbing out of a pool: pull up at the wall, then step onto the deck
+    const k = P.climb; k.t = Math.min(1, k.t + dt / 1.05);
+    const a = smooth(0, 0.5, k.t), b2 = smooth(0.45, 1, k.t);
+    P.pos.set(lerp(lerp(k.from[0], k.mid[0], a), k.to[0], b2), lerp(lerp(k.from[1], k.mid[1], a), k.to[1], b2), lerp(lerp(k.from[2], k.mid[2], a), k.to[2], b2));
+    P.yaw = dampAngle(P.yaw, k.yaw, 10, dt);
+    if (k.t < 0.5) c.setAnim('tread'); else { c.setAnim('walk'); c.speed = 0.9; }
+    if (k.t >= 1) { P.climb = null; P.mode = 'walk'; P.water = null; P.velY = 0; P.onGround = true; P.lastSafe.copy(P.pos); }
+    syncPlayerRig(dt); return;
+  }
   if (swimming) {
     const w = P.water;
-    const inside = pip(nx, nz, w.poly);
     const gy = groundAt(nx, nz, w.top + 0.8, 0.1);
-    if (w.sea && gy > w.top - 0.85) { P.pos.set(nx, gy, nz); P.mode = 'walk'; P.water = null; P.velY = 0; sfx('splash', 0.25); }
-    else if (inside) { P.pos.x = nx; P.pos.z = nz; }
-    else if (!w.sea && gy > -1e8 && gy <= w.top + 0.8 && gy > w.bottom + 0.3) { P.pos.set(nx, gy, nz); P.mode = 'walk'; P.water = null; P.velY = 0; sfx('splash', 0.25); }
+    if (w.sea) {
+      if (gy > w.top - 0.85) { P.pos.set(nx, gy, nz); P.mode = 'walk'; P.water = null; P.velY = 0; sfx('splash', 0.25); }
+      else if (pip(nx, nz, w.poly)) { P.pos.x = nx; P.pos.z = nz; }
+    } else {
+      // stay a body length away from the walls; swimming into an edge climbs out onto the deck
+      const inner = poolInner(w), cur = pip(P.pos.x, P.pos.z, inner);
+      if (pip(nx, nz, inner)) { P.pos.x = nx; P.pos.z = nz; }
+      else if (moving) {
+        const L = Math.hypot(vx, vz) || 1, dx = vx / L, dz = vz / L, hit = rayEdge(w.poly, P.pos.x, P.pos.z, dx, dz);
+        const ex = hit && hit[2] < poolMargin(w) + 0.5 ? poolExitAt(w, hit[0], hit[1], dx, dz) : null;
+        if (ex) {
+          P.climb = { t: 0, from: [P.pos.x, P.pos.y, P.pos.z], mid: [hit[0] - dx * 0.32, w.top - 0.55, hit[1] - dz * 0.32], to: ex, yaw: Math.atan2(dx, dz) };
+          sfx('splash', 0.3); fxSplash(hit[0] - dx * 0.4, w.top, hit[1] - dz * 0.4, 0.5);
+        } else if (pip(nx, P.pos.z, inner)) P.pos.x = nx;
+        else if (pip(P.pos.x, nz, inner)) P.pos.z = nz;
+        else if (!cur) { const e = nearestEdge(w.poly, nx, nz), e0 = nearestEdge(w.poly, P.pos.x, P.pos.z); if (e && e0 && e[2] > e0[2] && pip(nx, nz, w.poly)) { P.pos.x = nx; P.pos.z = nz; } }
+      }
+      // just jumped in at the edge: drift away from the wall
+      if (!pip(P.pos.x, P.pos.z, poolInner(w))) {
+        const e = nearestEdge(w.poly, P.pos.x, P.pos.z);
+        if (e && pip(P.pos.x, P.pos.z, w.poly)) { const ix = P.pos.x - e[0], iz = P.pos.z - e[1], d = Math.hypot(ix, iz) || 1; P.pos.x += ix / d * 1.4 * dt; P.pos.z += iz / d * 1.4 * dt; }
+      }
+    }
     collide(P.pos, P.radius, P.pos.y - 1, P.pos.y + 1);
     if (P.water) P.pos.y = damp(P.pos.y, w.hot || w.shallow ? w.bottom : w.top - 1.42, 8, dt);
     P.swimT += dt;
@@ -4299,7 +4390,7 @@ function overboard() {
   const P = Player;
   fxSplash(P.pos.x, 0.5, P.pos.z, 2); sfx('splash', 1.2);
   toast('Passenger overboard!', 'The crew fished you out and dried you off.');
-  P.pos.copy(P.lastSafe); P.velY = 0; P.mode = 'walk'; P.water = null;
+  P.pos.copy(P.lastSafe); P.velY = 0; P.mode = 'walk'; P.water = null; P.climb = null;
 }
 function onJumpPressed() {
   const P = Player;
@@ -4506,7 +4597,7 @@ class NPC {
   visibleAt(p) { const d = p.distanceTo(G.camera.position); if (d > 70) return false; _v1.copy(p).sub(G.camera.position).normalize(); G.camera.getWorldDirection(_v2); return _v1.dot(_v2) > 0.35 || d < 18; }
   teleportLevel(level, x, y, z) { this.level = level; this.pos.set(x, y, z); }
   choose(initial = false) {
-    this.release(); this.ch.setAnim('idle'); this.water = null; this.ch.hidden = false;
+    this.release(); this.ch.setAnim('idle'); this.water = null; this.ch.hidden = false; this.exitPlan = null; this.hop = null;
     const night = Env.night > 0.5, min = Clock.min;
     // event participation
     const ev = this.event;
@@ -4597,13 +4688,22 @@ class NPC {
     const bb = w.bb; let cx = (bb[0] + bb[2]) / 2, cz = (bb[1] + bb[3]) / 2;
     let start = null;
     if (w.sea) { start = seaPoint(null); if (!start) return this.wander(initial); const th = Math.atan2(start[1] - ISLE.z, start[0] - ISLE.x); [cx, cz] = G.port.H.at(th, 0.95); }
+    const inner = w.sea ? null : poolInner(w);
     const enter = () => {
       this.state = 'swim'; this.water = w; this.timer = mrand(25, 70); this.swimTarget = null;
       if (start) { this.pos.set(start[0], w.top - 1.42, start[1]); return; }
-      for (let k = 0; k < 20; k++) { const x = mrand(bb[0], bb[2]), z = mrand(bb[1], bb[3]); if (pip(x, z, w.poly)) { this.pos.set(x, w.top - 1.42, z); break; } }
+      for (let k = 0; k < 30; k++) { const x = mrand(bb[0], bb[2]), z = mrand(bb[1], bb[3]); if (pip(x, z, inner)) { this.pos.set(x, w.top - 1.42, z); break; } }
     };
     if (initial) { enter(); return; }
-    if (w.sea) this.goTo(cx, cz, enter); else this.goTo(cx + (bb[2] - bb[0]) * 0.6, cz, enter);
+    if (w.sea) { this.goTo(cx, cz, enter); return; }
+    // walk to the edge nearest a free spot in the water, then hop in
+    const g = this.grid, ex = nearestPoolExit(w, this.pos.x, this.pos.z, o => nearestValid(g, o[0], o[2], 1.2) >= 0);
+    if (!ex) { this.goTo(cx + (bb[2] - bb[0]) * 0.6, cz, enter); return; }
+    const hop = () => {
+      this.state = 'hop'; this.water = w; this.hop = { t: 0, from: this.pos.toArray(), to: [ex.inside[0], w.top - 1.42, ex.inside[1]], yaw: Math.atan2(-ex.dir[0], -ex.dir[1]), splash: false };
+      this.timer = mrand(25, 70); this.swimTarget = null;
+    };
+    if (!this.goTo(ex.out[0], ex.out[2], hop)) enter();
   }
   goDance(area, initial) {
     if (!area) return this.wander(initial);
@@ -4666,9 +4766,14 @@ class NPC {
       }
       case 'swim': {
         const w = this.water; this.timer -= dt;
-        if (!this.swimTarget || Math.hypot(this.swimTarget[0] - this.pos.x, this.swimTarget[1] - this.pos.z) < 0.6) {
+        if (!this.exitPlan && (!this.swimTarget || Math.hypot(this.swimTarget[0] - this.pos.x, this.swimTarget[1] - this.pos.z) < 0.6)) {
           if (w.sea) { const sp = seaPoint(this.pos); if (sp) this.swimTarget = sp; }
-          else for (let k = 0; k < 20; k++) { const x = mrand(w.bb[0], w.bb[2]), z = mrand(w.bb[1], w.bb[3]); if (pip(x, z, w.poly) && pip(x, z, offsetPolyCache(w))) { this.swimTarget = [x, z]; break; } }
+          else {
+            // a new spot in the water that can be reached in a straight line without nearing the walls
+            const inner = poolInner(w); this.swimTarget = null;
+            for (let k = 0; k < 24; k++) { const x = mrand(w.bb[0], w.bb[2]), z = mrand(w.bb[1], w.bb[3]); if (pip(x, z, inner) && segInside(inner, this.pos.x, this.pos.z, x, z)) { this.swimTarget = [x, z]; break; } }
+            if (!this.swimTarget && !pip(this.pos.x, this.pos.z, inner)) { const e = nearestEdge(w.poly, this.pos.x, this.pos.z); if (e) this.swimTarget = [this.pos.x + (this.pos.x - e[0]) * 0.8, this.pos.z + (this.pos.z - e[1]) * 0.8]; }
+          }
           this.restT = Math.random() < 0.4 ? mrand(2, 6) : 0;
         }
         if (this.restT > 0) { this.restT -= dt; c.setAnim('tread'); }
@@ -4678,9 +4783,38 @@ class NPC {
         } else c.setAnim('tread');
         this.pos.y = w.top - 1.42;
         if (this.timer <= 0) {
-          const g = this.grid; const k = nearestValid(g, this.pos.x, this.pos.z, w.sea ? 40 : 12);
+          const g = this.grid;
+          if (!w.sea && !this.exitPlan) {
+            // swim to the nearest edge with deck behind it, then climb out there
+            const ex = nearestPoolExit(w, this.pos.x, this.pos.z, o => nearestValid(g, o[0], o[2], 1.2) >= 0);
+            if (ex) { this.exitPlan = ex; this.swimTarget = ex.inside.slice(); this.restT = 0; this.timer = 25; break; }
+          }
+          if (this.exitPlan && this.timer > 0) break;
+          const k = nearestValid(g, this.pos.x, this.pos.z, w.sea ? 40 : 12);
           if (k >= 0) { const [x, y, z] = gridPos(g, k); this.pos.set(x, y, z); }
-          this.water = null; this.choose();
+          this.water = null; this.exitPlan = null; this.choose();
+        }
+        if (this.exitPlan && this.swimTarget && Math.hypot(this.swimTarget[0] - this.pos.x, this.swimTarget[1] - this.pos.z) < 0.7) {
+          const e = this.exitPlan; this.exitPlan = null;
+          this.state = 'hop'; this.hop = { t: 0, from: this.pos.toArray(), mid: [e.edge[0] - e.dir[0] * 0.32, w.top - 0.55, e.edge[1] - e.dir[1] * 0.32], to: e.out.slice(), yaw: Math.atan2(e.dir[0], e.dir[1]), out: true };
+        }
+        break;
+      }
+      case 'hop': {
+        // stepping into the pool from the edge, or climbing out onto the deck
+        const h = this.hop; h.t = Math.min(1, h.t + dt / (h.out ? 1.1 : 0.75));
+        this.yaw = dampAngle(this.yaw, h.yaw, 10, dt);
+        if (h.out) {
+          const a = smooth(0, 0.5, h.t), b = smooth(0.45, 1, h.t);
+          for (let i = 0; i < 3; i++) this.pos.setComponent(i, lerp(lerp(h.from[i], h.mid[i], a), h.to[i], b));
+          c.setAnim(h.t < 0.5 ? 'tread' : 'walk'); c.speed = 0.9;
+          if (h.t >= 1) { this.water = null; this.hop = null; this.choose(); }
+        } else {
+          for (const i of [0, 2]) this.pos.setComponent(i, lerp(h.from[i], h.to[i], smooth(0, 1, h.t)));
+          this.pos.y = lerp(h.from[1], h.to[1], h.t) + Math.sin(h.t * Math.PI) * 0.45;
+          c.setAnim(h.t < 0.6 ? 'air' : 'tread');
+          if (h.t > 0.55 && !h.splash) { h.splash = true; if (this.visibleToPlayer()) fxSplash(this.pos.x, this.water.top, this.pos.z, 0.7); }
+          if (h.t >= 1) { this.state = 'swim'; this.hop = null; }
         }
         break;
       }
@@ -4753,7 +4887,7 @@ function updateNPCs(dt) {
 }
 function nearestNPC(p, maxD) {
   let best = null, bd = maxD;
-  for (const n of NPCS) { if (n.i >= G.crowd.active || n.ch.hidden || n.state === 'ride' || n.state === 'swim') continue; const d = Math.hypot(n.pos.x - p.x, n.pos.z - p.z); if (d < bd && Math.abs(n.pos.y - p.y) < 1.5) { bd = d; best = n; } }
+  for (const n of NPCS) { if (n.i >= G.crowd.active || n.ch.hidden || n.state === 'ride' || n.state === 'swim' || n.state === 'hop') continue; const d = Math.hypot(n.pos.x - p.x, n.pos.z - p.z); if (d < bd && Math.abs(n.pos.y - p.y) < 1.5) { bd = d; best = n; } }
   return best;
 }
 
@@ -4824,7 +4958,9 @@ function onActionPressed() {
     case 'remote': { Player.yaw = Math.atan2(h.remote.pos.x - Player.pos.x, h.remote.pos.z - Player.pos.z); doEmote('wave'); netSay('Hi ' + h.remote.name + '!'); return; }
     case 'slide': return actSlide(h.data.slide);
     case 'zip': return actZip();
-    case 'towerUp': return fadeTeleport(-6, DK.tower, 111, Math.PI, () => toast('Top of the slide tower', 'Deck 19 · Pick a slide'));
+    case 'towerUp': return fadeTeleport(-6, DK.tower, 111, Math.PI, () => { toast('Top of the slide tower', 'Deck 19 · Pick a slide'); setTimeout(() => { if (!Player.activity && G.state === 'play') openSheet('slides'); }, 400); });
+    case 'slides': return openSheet('slides');
+    case 'excursions': return openSheet('excursions');
     case 'towerDown': return fadeTeleport(-6, DK.top, 117.6, 0);
     case 'elevator': return openSheet('map', { elevator: true });
     case 'hoops': return actHoops();
@@ -4895,7 +5031,7 @@ function actSlide(idx) {
       const t2 = Math.min(1, (d + 2) / s.L); const tan2 = s.curve.getTangentAt(t2);
       const turn = wrapAngle(Math.atan2(tan2.x, tan2.z) - Player.yaw);
       Player.override = r => { c.rig.body.rotation.x = -1.42 - pitch; c.rig.body.rotation.z = clamp(-turn * 1.8, -0.6, 0.6); };
-      $('bigVal').textContent = Math.round(v * 3.6);
+      $('bigVal').textContent = Math.round(v * 3.6); this.top = Math.max(this.top || 0, v * 3.6);
       Audio.whoosh(clamp(v / 16, 0.15, 1));
       this.cam = { p, tan, up: fr.up };
       if (t >= 1) {
@@ -4903,7 +5039,8 @@ function actSlide(idx) {
         const end = s.curve.getPointAt(1);
         const w = waterAt(end.x, end.z);
         fxSplash(end.x, w ? w.top : DK.top + 0.4, end.z, 1.4); sfx('splash', 1.2);
-        stamp('slide'); const rode = new Set(G.profile.slides || []); rode.add(s.id); G.profile.slides = [...rode]; saveProfile(); if (rode.size >= 3) stamp('allslides');
+        stamp('slide'); const rode = new Set(G.profile.slides || []); rode.add(s.id); G.profile.slides = [...rode];
+        G.profile.slideBest = G.profile.slideBest || {}; G.profile.slideBest[s.id] = Math.max(G.profile.slideBest[s.id] || 0, Math.round(this.top || v * 3.6)); saveProfile(); if (rode.size >= 3) stamp('allslides');
         if (w) { Player.pos.set(end.x, w.top - 1.42, end.z); Player.mode = 'swim'; Player.water = w; Player.swimT = 0; }
         else { Player.pos.set(-19.6, DK.top, 143); Player.mode = 'walk'; toast(s.name + ' complete', 'Top speed ' + Math.round(v * 3.6) + ' km/h'); }
         Cam.yaw = Player.yaw + Math.PI; Cam.pitch = 0.25;
@@ -5935,6 +6072,312 @@ function openMusic(where) {
   }));
 }
 
+/* ---- 66_excursions.js ---- */
+/* ================= port excursions: jet ski loop, parasailing, snorkeling the reef ================= */
+const EXCURSIONS = [
+  { id: 'jetski', name: 'Jet ski island loop', blurb: 'Race a jet ski through eight buoys around the island.', time: 'About 2 minutes', icon: 'wave' },
+  { id: 'parasail', name: 'Parasail over the lagoon', blurb: 'A speedboat lifts you 40 metres above the water for a view of the whole island.', time: '90 seconds', icon: 'flag' },
+  { id: 'snorkel', name: 'Snorkel the reef', blurb: 'Dive the coral garden off the beach and spot six kinds of sea life.', time: 'As long as you like', icon: 'star' },
+];
+const XC = {};
+function excursionsSheet() {
+  if (!G.port) { toast('Excursions run at the ports', 'Take a tender ashore between 07:00 and 17:00'); return; }
+  const best = (G.profile.excursions || {});
+  const cards = EXCURSIONS.map(e => {
+    const b = best[e.id], extra = e.id === 'jetski' && b && b.time ? ' · best ' + fmtSecs(b.time) : b && b.done ? ' · done' : '';
+    return `<div class="port"><div><b>${esc(e.name)}</b><small>${esc(e.time)}${extra}</small><p>${esc(e.blurb)}</p></div><button class="btn btn-primary" data-x="${e.id}">Go</button></div>`;
+  }).join('');
+  sheet('Excursions', G.port.P.name + ' · Booked at the pier desk, included in your fare', cards, body => body.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { sfx('tick'); closeSheet(); startExcursion(b.dataset.x); }));
+}
+function fmtSecs(s) { const m = Math.floor(s / 60), r = Math.round(s % 60); return m + ':' + String(r).padStart(2, '0'); }
+function startExcursion(id) {
+  if (!G.port) return;
+  if (Player.activity) endActivity();
+  if (id === 'jetski') return actJetski();
+  if (id === 'parasail') return actParasail();
+  if (id === 'snorkel') return actSnorkel();
+}
+function xcDone(id, data) {
+  const pr = G.profile; pr.excursions = pr.excursions || {}; pr.excursions[id] = Object.assign(pr.excursions[id] || {}, data, { done: true }); saveProfile();
+}
+// a point in open water around the island: angle th, distance as a fraction of the shoreline radius
+function seaAt(th, t) { const H = G.port.H, r = H.shoreR(th) * t; return [ISLE.x + Math.cos(th) * r, ISLE.z + Math.sin(th) * r]; }
+function seaDepth(x, z) { return G.port.H(x, z); }
+
+/* ---------- small vehicles ---------- */
+function jetskiMesh() {
+  const g = new T.Group();
+  const hullG = new T.CylinderGeometry(0.55, 0.42, 2.7, 10, 1); hullG.rotateX(Math.PI / 2); hullG.scale(1, 0.48, 1);
+  const nose = new T.ConeGeometry(0.55, 0.9, 10); nose.rotateX(Math.PI / 2); nose.scale(1, 0.48, 1); nose.translate(0, 0, 1.8);
+  const hull = new T.Mesh(mergeGeos([hullG, nose]), new T.MeshStandardMaterial({ color: lin('#f4f6f8'), roughness: 0.35 })); hull.castShadow = true; g.add(hull);
+  const stripe = new T.Mesh(new T.BoxGeometry(1.12, 0.12, 2.6), new T.MeshStandardMaterial({ color: lin('#ff6a55'), roughness: 0.4 })); stripe.position.set(0, -0.02, 0.15); g.add(stripe);
+  const seat = new T.Mesh(new T.BoxGeometry(0.5, 0.2, 1.2), new T.MeshStandardMaterial({ color: lin('#10264a'), roughness: 0.7 })); seat.position.set(0, 0.32, -0.35); g.add(seat);
+  const col = new T.Mesh(new T.BoxGeometry(0.35, 0.45, 0.35), MAT.navy || stripe.material); col.position.set(0, 0.42, 0.55); col.rotation.x = -0.4; g.add(col);
+  const bar = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.9, 8), new T.MeshStandardMaterial({ color: lin('#33343f'), metalness: 0.6, roughness: 0.3 })); bar.rotation.z = Math.PI / 2; bar.position.set(0, 0.68, 0.45); g.add(bar);
+  return g;
+}
+function speedboatMesh() {
+  const g = new T.Group();
+  const hullG = new T.CylinderGeometry(1.2, 0.9, 6.5, 12, 1); hullG.rotateX(Math.PI / 2); hullG.scale(1, 0.42, 1);
+  const nose = new T.ConeGeometry(1.2, 2.2, 12); nose.rotateX(Math.PI / 2); nose.scale(1, 0.42, 1); nose.translate(0, 0, 4.35);
+  const hull = new T.Mesh(mergeGeos([hullG, nose]), new T.MeshStandardMaterial({ color: lin('#f4f6f8'), roughness: 0.3 })); hull.castShadow = true; g.add(hull);
+  const band = new T.Mesh(new T.BoxGeometry(2.42, 0.18, 6.4), new T.MeshStandardMaterial({ color: lin('#1b6fd8'), roughness: 0.4 })); band.position.y = -0.1; g.add(band);
+  const screen = new T.Mesh(new T.BoxGeometry(1.8, 0.6, 0.08), MAT.darkGlass || band.material); screen.position.set(0, 0.75, 1.2); screen.rotation.x = -0.5; g.add(screen);
+  return g;
+}
+function canopyMesh() {
+  const g = new T.Group();
+  const geo = new T.SphereGeometry(4.2, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.32); geo.scale(1, 0.55, 1.25);
+  const cols = []; const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) { const a = Math.atan2(p.getZ(i), p.getX(i)), k = Math.floor((a + Math.PI) / (Math.PI / 4)) % 2; const c = lin(k ? '#ff6a55' : '#ffd23f'); cols.push(c.r, c.g, c.b); }
+  geo.setAttribute('color', new T.Float32BufferAttribute(cols, 3));
+  const can = new T.Mesh(geo, new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: T.DoubleSide })); can.castShadow = true; g.add(can);
+  const lines = [], top = 1.6;
+  for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; lines.push(Math.cos(a) * 3.3, top, Math.sin(a) * 4.0, 0, -5.4, 0); }
+  const lg = new T.BufferGeometry(); lg.setAttribute('position', new T.Float32BufferAttribute(lines, 3));
+  g.add(new T.LineSegments(lg, new T.LineBasicMaterial({ color: lin('#f4f6f8') })));
+  return g;
+}
+function buoyMesh(n) {
+  const g = new T.Group();
+  const b = new T.Mesh(new T.SphereGeometry(0.75, 14, 10), new T.MeshStandardMaterial({ color: lin('#ff8a1e'), roughness: 0.5, emissive: lin('#ff6a00'), emissiveIntensity: 0.15 })); b.scale.y = 0.8; b.castShadow = true; g.add(b);
+  const pole = new T.Mesh(new T.CylinderGeometry(0.05, 0.05, 2.2, 6), new T.MeshStandardMaterial({ color: lin('#f4f6f8') })); pole.position.y = 1.4; g.add(pole);
+  const flag = new T.Mesh(new T.PlaneGeometry(0.9, 0.55), new T.MeshStandardMaterial({ color: lin('#2fd3c6'), side: T.DoubleSide, emissive: lin('#2fd3c6'), emissiveIntensity: 0.25 })); flag.position.set(0.45, 2.15, 0); g.add(flag);
+  return g;
+}
+
+/* ---------- jet ski: a horseshoe course of buoys around the island, avoiding the pier ---------- */
+function actJetski() {
+  const port = G.port, H = port.H, grp = new T.Group(); G.scene.add(grp);
+  const ski = jetskiMesh(); grp.add(ski);
+  const N = 8, a0 = Math.PI + 0.42, a1 = Math.PI + TAU - 0.42, buoys = [];
+  for (let k = 0; k < N; k++) {
+    const th = lerp(a0, a1, k / (N - 1));
+    let t = 1.12; while (t < 1.4 && seaDepth(...seaAt(th, t)) > -1.6) t += 0.02;
+    const [x, z] = seaAt(th, t), m = buoyMesh(k); m.position.set(x, 0.1, z); grp.add(m); buoys.push({ x, z, m });
+  }
+  const [sx, sz] = seaAt(Math.PI + 0.3, 1.14);
+  const st = { x: sx, z: sz, yaw: Math.atan2(buoys[0].x - sx, buoys[0].z - sz), v: 0, next: 0, t: 0, done: false, spray: 0, countdown: 2.2 };
+  const c = Player.char;
+  const finish = (ok) => {
+    st.done = true; Audio.whoosh(0); $('bigRead').hidden = true;
+    if (ok) {
+      const pr = G.profile.excursions && G.profile.excursions.jetski, prev = pr && pr.time;
+      xcDone('jetski', { time: prev ? Math.min(prev, st.t) : st.t }); stamp('jetski');
+      toast(prev && st.t < prev ? 'New best time: ' + fmtSecs(st.t) : 'Island loop done in ' + fmtSecs(st.t), prev ? 'Your best is ' + fmtSecs(Math.min(prev, st.t)) : 'Eight buoys around ' + port.P.name);
+    }
+    setTimeout(() => { endActivity(); const s = World.zones.port.spawn; fadeTeleport(s[0], s[1], s[2], s[3]); }, ok ? 900 : 0);
+  };
+  fadeTeleport(sx, 0.4, sz, st.yaw, () => startActivity({
+    exitable: false, bar: [{ label: 'Back to the pier', fn: () => finish(false) }],
+    enter() { c.setAnim('sit'); c.seat = 0.5; $('bigRead').hidden = false; $('bigLbl').textContent = 'KM/H · BUOY 1/' + N; toast('Jet ski island loop', 'Steer through the eight buoys. Push forward to go.'); sfx('whooshStart'); },
+    update(dt, inp) {
+      if (st.done) return;
+      st.countdown -= dt; const go = st.countdown <= 0;
+      if (go) st.t += dt;
+      const thr = go ? clamp(inp.y, -0.4, 1) : 0, steer = clamp(inp.x, -1, 1);
+      st.v = clamp(st.v + (thr > 0 ? thr * 9 : thr * 12 - 1.2) * dt - st.v * 0.12 * dt, 0, 19);
+      st.yaw -= steer * (1.1 + st.v * 0.06) * dt;
+      const nx = st.x + Math.sin(st.yaw) * st.v * dt, nz = st.z + Math.cos(st.yaw) * st.v * dt;
+      const dIsle = Math.hypot(nx - ISLE.x, nz - ISLE.z);
+      if (seaDepth(nx, nz) > -0.7 || dIsle > port.P.R * 1.5 || (Math.abs(nz - ISLE.z) < 5 && nx < ISLE.x - port.P.R + 9 && nx > ISLE.x - port.P.R - 60)) { st.v *= 0.3; st.yaw += Math.PI * 0.5 * Math.sign(steer || 1) * dt * 6; sfx('splash', 0.3); }
+      else { st.x = nx; st.z = nz; }
+      const bob = Math.sin(G.time * 3.1) * 0.06 + Math.min(0.25, st.v * 0.012);
+      ski.position.set(st.x, 0.18 + bob, st.z); ski.rotation.set(-Math.min(0.12, st.v * 0.007), st.yaw, clamp(steer * st.v * 0.02, -0.35, 0.35));
+      Player.pos.set(st.x - Math.sin(st.yaw) * 0.35, 0.12 + bob, st.z - Math.cos(st.yaw) * 0.35); Player.yaw = st.yaw;
+      Player.override = r => { r.rotation.z = clamp(steer * st.v * 0.02, -0.35, 0.35); };
+      st.spray -= dt; if (st.v > 6 && st.spray < 0) { st.spray = 0.12; fxSplash(st.x - Math.sin(st.yaw) * 1.6, 0.1, st.z - Math.cos(st.yaw) * 1.6, 0.35 + st.v * 0.02); }
+      Audio.whoosh(clamp(st.v / 18, 0.12, 0.85));
+      for (const b of buoys) b.m.position.y = 0.1 + Math.sin(G.time * 2 + b.x) * 0.08;
+      const B = buoys[st.next];
+      B.m.children[2].material.emissiveIntensity = 0.5 + 0.5 * Math.sin(G.time * 6);
+      if (Math.hypot(B.x - st.x, B.z - st.z) < 6.5) {
+        B.m.visible = false; st.next++; sfx('chip');
+        if (st.next >= N) return finish(true);
+      }
+      $('bigVal').textContent = go ? Math.round(st.v * 3.6) : Math.ceil(st.countdown);
+      $('bigLbl').textContent = go ? 'KM/H · BUOY ' + (st.next + 1) + '/' + N + ' · ' + fmtSecs(st.t) : 'GET READY';
+      this.cam = true;
+    },
+    camera() {
+      const back = 6.5 + st.v * 0.12, nb = buoys[Math.min(st.next, N - 1)];
+      const pos = _v1.set(st.x - Math.sin(st.yaw) * back, 2.6, st.z - Math.cos(st.yaw) * back).clone();
+      const look = _v2.set(lerp(st.x + Math.sin(st.yaw) * 6, nb.x, 0.15), 0.9, lerp(st.z + Math.cos(st.yaw) * 6, nb.z, 0.15)).clone();
+      return { pos, look, k: 6, fov: 60 + st.v * 0.6 };
+    },
+    exit() { Audio.whoosh(0); Player.override = null; c.setAnim('idle'); $('bigRead').hidden = true; G.scene.remove(grp); grp.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  }));
+}
+
+/* ---------- parasail: towed behind a speedboat along the coast ---------- */
+function actParasail() {
+  const port = G.port, grp = new T.Group(); G.scene.add(grp);
+  const boat = speedboatMesh(), can = canopyMesh(); grp.add(boat, can);
+  const ropeG = new T.BufferGeometry(); ropeG.setAttribute('position', new T.Float32BufferAttribute(new Float32Array(6), 3));
+  const rope = new T.Line(ropeG, new T.LineBasicMaterial({ color: lin('#f4f6f8') })); rope.frustumCulled = false; grp.add(rope);
+  const DUR = 90, th0 = Math.PI + 0.35, span = 3.6, c = Player.char;
+  const path = th => { let t = 1.22; while (t < 1.45 && seaDepth(...seaAt(th, t)) > -3) t += 0.02; return seaAt(th, t); };
+  const st = { t: 0, done: false, shot: false };
+  const finish = (ok) => {
+    if (st.done) return; st.done = true; Audio.whoosh(0);
+    if (ok) { xcDone('parasail', {}); stamp('parasail'); toast('What a view', 'Parasailing over ' + port.P.name); }
+    endActivity(); const s = World.zones.port.spawn; fadeTeleport(s[0], s[1], s[2], s[3]);
+  };
+  const [bx, bz] = path(th0);
+  fadeTeleport(bx, 2, bz, 0, () => startActivity({
+    exitable: false, bar: [{ label: 'Land now', fn: () => finish(false) }],
+    enter() { c.setAnim('zip'); toast('Parasail over the lagoon', 'Hold on! Drag to look around.'); sfx('horn'); Cam.yaw = Math.PI + 0.7; },
+    update(dt, inp) {
+      if (st.done) return;
+      st.t += dt; const u = Math.min(1, st.t / DUR);
+      const th = th0 + span * u, [x, z] = path(th), [x2, z2] = path(th + 0.01), yaw = Math.atan2(x2 - x, z2 - z);
+      boat.position.set(x, 0.35 + Math.sin(G.time * 2.4) * 0.08, z); boat.rotation.set(-0.04, yaw, Math.sin(G.time * 1.7) * 0.03);
+      const alt = 42 * smooth(0, 0.16, u) * smooth(1, 0.86, u) + 2.5, back = 18 + 30 * smooth(0, 0.16, u) * smooth(1, 0.86, u);
+      const hx = x - Math.sin(yaw) * back, hz = z - Math.cos(yaw) * back;
+      Player.pos.set(hx, alt - 1.4, hz); Player.yaw = yaw;
+      can.position.set(hx, alt + 4.6, hz); can.rotation.set(0.25, yaw, Math.sin(G.time * 0.8) * 0.05);
+      const rp = ropeG.attributes.position; rp.setXYZ(0, x - Math.sin(yaw) * 2.8, 1.0, z - Math.cos(yaw) * 2.8); rp.setXYZ(1, hx, alt - 0.2, hz); rp.needsUpdate = true;
+      Audio.whoosh(0.25 + 0.3 * smooth(0, 0.16, u));
+      if (!st.shot && u > 0.45) { st.shot = true; toast('Snap!', 'The boat crew took your photo at 40 metres'); }
+      this.cam = { hx, hz, alt, yaw };
+      if (u >= 1) finish(true);
+    },
+    camera() {
+      if (!this.cam) return null;
+      const { hx, hz, alt } = this.cam, a = Cam.yaw;
+      return { pos: V3(hx + Math.sin(a) * 9, alt + 1.5, hz + Math.cos(a) * 9), look: V3(lerp(hx, ISLE.x, 0.25), lerp(alt - 1, 6, 0.4), lerp(hz, ISLE.z, 0.25)), k: 3, fov: 62 };
+    },
+    exit() { Audio.whoosh(0); c.setAnim('idle'); G.scene.remove(grp); grp.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  }));
+}
+
+/* ---------- snorkel: an underwater coral garden with six kinds of sea life ---------- */
+const SEA_LIFE = [
+  { id: 'tang', name: 'Blue tang', body: '#1f6fe0', fin: '#ffd23f', n: 9, s: 0.32 },
+  { id: 'clown', name: 'Clownfish', body: '#ff7a1e', fin: '#f4f6f8', n: 6, s: 0.22 },
+  { id: 'yellow', name: 'Yellow tang', body: '#ffd23f', fin: '#ffe680', n: 10, s: 0.28 },
+  { id: 'parrot', name: 'Parrotfish', body: '#2fc9a0', fin: '#e84c8b', n: 5, s: 0.5 },
+  { id: 'angel', name: 'Angelfish', body: '#7b5cff', fin: '#ffd23f', n: 6, s: 0.34 },
+  { id: 'turtle', name: 'Sea turtle', body: '#5f7f3a', fin: '#8a6a3a', n: 2, s: 1.0, turtle: true },
+];
+function fishGeo(turtle) {
+  if (turtle) {
+    const shell = new T.SphereGeometry(0.6, 12, 8); shell.scale(1, 0.38, 1.25);
+    const head = new T.SphereGeometry(0.2, 8, 6); head.translate(0, 0.02, 0.85);
+    const fl = []; for (const [x, z, r] of [[0.65, 0.35, -0.5], [-0.65, 0.35, 0.5], [0.45, -0.55, -0.3], [-0.45, -0.55, 0.3]]) { const f = new T.BoxGeometry(0.5, 0.05, 0.22); f.rotateY(r); f.translate(x, -0.05, z); fl.push(f); }
+    return mergeGeos([shell, head, ...fl]);
+  }
+  const body = new T.SphereGeometry(0.5, 10, 8); body.scale(0.32, 0.62, 1);
+  const tail = new T.ConeGeometry(0.32, 0.42, 4); tail.rotateX(-Math.PI / 2); tail.scale(0.25, 1.2, 1); tail.translate(0, 0, -0.62);
+  const fin = new T.ConeGeometry(0.16, 0.3, 4); fin.scale(0.2, 1, 1.4); fin.translate(0, 0.36, -0.05);
+  return mergeGeos([body, tail, fin]);
+}
+function buildReef(cx, cz) {
+  const H = G.port.H, grp = new T.Group(), rnd = mulberry(G.port.P.seed + 77);
+  // corals: brain domes, branching trees, sea fans and tube sponges
+  const shapes = [
+    (() => { const g = new T.SphereGeometry(0.7, 10, 7, 0, TAU, 0, Math.PI * 0.55); return g; })(),
+    (() => { const parts = []; for (let k = 0; k < 6; k++) { const c = new T.CylinderGeometry(0.06, 0.1, 1.1, 5); c.translate(0, 0.55, 0); c.rotateZ((rnd() - 0.5) * 1.1); c.rotateY(k); parts.push(c); } return mergeGeos(parts); })(),
+    (() => { const g = new T.CircleGeometry(0.8, 14, 0, Math.PI); g.translate(0, 0.1, 0); return g; })(),
+    (() => { const parts = []; for (let k = 0; k < 4; k++) { const c = new T.CylinderGeometry(0.16, 0.14, 0.6 + k * 0.25, 8, 1, true); c.translate(Math.cos(k * 1.7) * 0.25, 0.3 + k * 0.12, Math.sin(k * 1.7) * 0.25); parts.push(c); } return mergeGeos(parts); })(),
+  ];
+  const coralCols = ['#ff6a9e', '#ff8a5c', '#b07bff', '#ffd23f', '#2fd3c6', '#ff4f6d', '#f7b267', '#7bd389'];
+  const mat = new T.MeshStandardMaterial({ roughness: 0.85, side: T.DoubleSide });
+  const per = 26, M = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p = new T.Vector3();
+  shapes.forEach(geo => {
+    const im = new T.InstancedMesh(geo, mat, per);
+    for (let i = 0; i < per; i++) {
+      const a = rnd() * TAU, r = Math.sqrt(rnd()) * 20, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+      p.set(x, H(x, z) - 0.05, z); q.setFromAxisAngle(V3(0, 1, 0), rnd() * TAU); const s = 0.6 + rnd() * 1.4; sc.set(s, s * (0.7 + rnd() * 0.6), s);
+      M.compose(p, q, sc); im.setMatrixAt(i, M); im.setColorAt(i, lin(coralCols[Math.floor(rnd() * coralCols.length)]));
+    }
+    im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true; grp.add(im);
+  });
+  // rocks
+  const rock = new T.InstancedMesh(new T.DodecahedronGeometry(0.9, 0), new T.MeshStandardMaterial({ color: lin('#6e6a60'), roughness: 1 }), 18);
+  for (let i = 0; i < 18; i++) { const a = rnd() * TAU, r = 4 + rnd() * 20, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, s = 0.8 + rnd() * 1.8; M.compose(V3(x, H(x, z) - 0.2, z), q.setFromEuler(new T.Euler(rnd(), rnd() * 3, rnd())), V3(s, s * 0.6, s)); rock.setMatrixAt(i, M); }
+  rock.instanceMatrix.needsUpdate = true; grp.add(rock);
+  // sea life: each species swims in a loose loop around its own anchor
+  const schools = SEA_LIFE.map((sp, k) => {
+    const geo = fishGeo(sp.turtle), m = new T.MeshStandardMaterial({ color: lin(sp.body), roughness: 0.45, emissive: lin(sp.fin), emissiveIntensity: 0.12 });
+    const im = new T.InstancedMesh(geo, m, sp.n); im.frustumCulled = false; grp.add(im);
+    const a = k / SEA_LIFE.length * TAU + rnd() * 0.5, r = 6 + rnd() * 10, ax = cx + Math.cos(a) * r, az = cz + Math.sin(a) * r;
+    const floor = H(ax, az);
+    return { sp, im, ax, az, ay: Math.min(-1.6, floor + 1.4 + rnd() * 1.2), rad: sp.turtle ? 6 : 2.2 + rnd() * 1.5, ph: rnd() * TAU, speed: sp.turtle ? 0.12 : 0.35 + rnd() * 0.2, offs: Array.from({ length: sp.n }, () => [rnd() * 1.6 - 0.8, rnd() * 0.8 - 0.4, rnd() * 1.6 - 0.8, rnd() * TAU]) };
+  });
+  // light from above: a bright, rippling ceiling where the surface is
+  const surf = new T.Mesh(new T.PlaneGeometry(120, 120, 1, 1), new T.MeshBasicMaterial({ color: lin('#7fe3f0'), transparent: true, opacity: 0.55, side: T.DoubleSide, fog: false, depthWrite: false }));
+  surf.rotation.x = Math.PI / 2; surf.position.set(cx, -0.08, cz); grp.add(surf);
+  // bubbles
+  const bg = new T.BufferGeometry(), NB = 40, bp = new Float32Array(NB * 3); bg.setAttribute('position', new T.BufferAttribute(bp, 3));
+  const bubbles = new T.Points(bg, new T.PointsMaterial({ color: 0xffffff, size: 0.07, transparent: true, opacity: 0.8 })); bubbles.frustumCulled = false; grp.add(bubbles);
+  return { grp, schools, bubbles, surf };
+}
+function actSnorkel() {
+  const port = G.port, H = port.H;
+  let th = Math.PI + 0.75, best = null;
+  for (let k = 0; k < 24 && !best; k++) { const a = th + k * 0.2; for (let t = 1.05; t < 1.4; t += 0.02) { const [x, z] = seaAt(a, t), d = H(x, z); if (d < -3.2 && d > -6) { best = [x, z]; break; } } }
+  if (!best) best = seaAt(th, 1.22);
+  const [cx, cz] = best, reef = buildReef(cx, cz); G.scene.add(reef.grp);
+  const st = { found: new Set(), done: false, x: cx - 10, z: cz - 6, y: -2.2, yaw: 0.6, bubbleT: 0, bi: 0 };
+  const c = Player.char, M = new T.Matrix4(), q = new T.Quaternion(), E = new T.Euler(), s = new T.Vector3(), p = new T.Vector3();
+  const finish = () => {
+    if (st.done) return; st.done = true;
+    endActivity(); const sp = World.zones.port.spawn; fadeTeleport(sp[0], sp[1], sp[2], sp[3]);
+  };
+  fadeTeleport(st.x, st.y, st.z, st.yaw, () => startActivity({
+    exitable: false, bar: [{ label: 'Surface', fn: finish }],
+    enter() {
+      G.underwater = { color: lin('#0f6f86'), density: 0.06 }; c.setAnim('swim');
+      $('bigRead').hidden = false; $('bigVal').textContent = '0/6'; $('bigLbl').textContent = 'SEA LIFE SPOTTED';
+      toast('Snorkel the reef', 'Swim around the coral and find six kinds of sea life'); sfx('splash', 0.8);
+    },
+    update(dt, inp) {
+      if (st.done) return;
+      const fx = -Math.sin(Cam.yaw), fz = -Math.cos(Cam.yaw), rx = Math.cos(Cam.yaw), rz = -Math.sin(Cam.yaw);
+      const mx = fx * inp.y + rx * inp.x, mz = fz * inp.y + rz * inp.x, mag = Math.min(1, Math.hypot(inp.x, inp.y));
+      const sp = 1.9 * mag;
+      if (mag > 0.08) { const L = Math.hypot(mx, mz) || 1; st.x += mx / L * sp * dt; st.z += mz / L * sp * dt; st.yaw = dampAngle(st.yaw, Math.atan2(mx, mz), 6, dt); }
+      // keep inside the reef area, under the surface and above the sand
+      const dx = st.x - cx, dz = st.z - cz, d = Math.hypot(dx, dz); if (d > 30) { st.x = cx + dx / d * 30; st.z = cz + dz / d * 30; }
+      const floor = H(st.x, st.z); st.y = damp(st.y, clamp(Math.max(floor + 1.2, -2.4), floor + 0.9, -1.1), 3, dt);
+      Player.pos.set(st.x, st.y, st.z); Player.yaw = st.yaw; c.setAnim(mag > 0.08 ? 'swim' : 'tread');
+      // fish
+      for (const S of reef.schools) {
+        const t = G.time * S.speed + S.ph, sx = S.ax + Math.cos(t) * S.rad, sz = S.az + Math.sin(t) * S.rad, yaw = Math.atan2(-Math.sin(t), Math.cos(t));
+        for (let i = 0; i < S.sp.n; i++) {
+          const o = S.offs[i], w = Math.sin(G.time * 9 + o[3]) * 0.25;
+          p.set(sx + o[0], S.ay + o[1] + Math.sin(G.time * 1.3 + o[3]) * 0.15, sz + o[2]);
+          q.setFromEuler(E.set(0, yaw + w * (S.sp.turtle ? 0.2 : 1), 0)); s.setScalar(S.sp.s * (0.85 + (i % 3) * 0.12));
+          M.compose(p, q, s); S.im.setMatrixAt(i, M);
+        }
+        S.im.instanceMatrix.needsUpdate = true;
+        if (!st.found.has(S.sp.id) && Math.hypot(sx - st.x, sz - st.z) < 6.5 && Math.abs(S.ay - st.y) < 3) {
+          st.found.add(S.sp.id); sfx('chip'); toast('Spotted: ' + S.sp.name, st.found.size + ' of ' + SEA_LIFE.length + ' kinds of sea life');
+          $('bigVal').textContent = st.found.size + '/' + SEA_LIFE.length;
+          if (st.found.size >= SEA_LIFE.length) { xcDone('snorkel', {}); stamp('snorkel'); toast('Reef explorer', 'You found all six. Surface when you are ready.'); }
+        }
+      }
+      // bubbles rise from the snorkeler
+      st.bubbleT -= dt; const bp = reef.bubbles.geometry.attributes.position;
+      if (st.bubbleT < 0) { st.bubbleT = 0.18; bp.setXYZ(st.bi, st.x + (Math.random() - 0.5) * 0.2, st.y + 0.5, st.z + (Math.random() - 0.5) * 0.2); st.bi = (st.bi + 1) % bp.count; }
+      for (let i = 0; i < bp.count; i++) { const y = bp.getY(i); if (y < -0.1 && y !== 0) bp.setY(i, y + dt * 0.9); }
+      bp.needsUpdate = true;
+      reef.surf.material.opacity = 0.45 + 0.1 * Math.sin(G.time * 1.7);
+      this.cam = true;
+    },
+    camera() {
+      const a = Cam.yaw, dist = 3.4, cy = Math.min(-0.45, st.y + 0.9);
+      return { pos: V3(st.x + Math.sin(a) * dist, cy, st.z + Math.cos(a) * dist), look: V3(st.x, st.y + 0.2, st.z), k: 8, fov: 60 };
+    },
+    exit() {
+      G.underwater = null; c.setAnim('idle'); $('bigRead').hidden = true;
+      G.scene.remove(reef.grp); reef.grp.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+      if (st.found.size && st.found.size < SEA_LIFE.length) toast('Back on the beach', 'You spotted ' + st.found.size + ' of ' + SEA_LIFE.length + ' kinds of sea life');
+    }
+  }));
+}
+
 /* ---- 70_events.js ---- */
 /* ================= clock, daily program, party effects, passport stamps ================= */
 const Clock = { min: 16 * 60 + 30, day: 1, rate: 1 };
@@ -5978,6 +6421,9 @@ const STAMPS = [
   { id: 'ashore', name: 'Shore Leave', hint: 'Go ashore at a port of call', icon: 'anchor' },
   { id: 'islands', name: 'Island Hopper', hint: 'Visit all three ports', icon: 'compass' },
   { id: 'shipmates', name: 'Shipmates', hint: 'Chat with another passenger online', icon: 'chat' },
+  { id: 'jetski', name: 'Jet Setter', hint: 'Finish the jet ski island loop at a port', icon: 'wave' },
+  { id: 'parasail', name: 'Sky High', hint: 'Go parasailing at a port', icon: 'flag' },
+  { id: 'snorkel', name: 'Reef Explorer', hint: 'Spot all six kinds of sea life while snorkeling', icon: 'star' },
 ];
 function isLive(ev, m = Clock.min) { if (ev.end <= 1440) return m >= ev.start && m < ev.end; return m >= ev.start || m < ev.end - 1440; }
 function liveEvent() { return EVENTS.find(e => isLive(e)); }
@@ -6738,6 +7184,134 @@ function goToPeer(peer) {
   fadeTeleport(x, y, z, Math.atan2(p.x - x, p.z - z), () => { leaveSuiteState(); toast('You found ' + R.name); });
 }
 
+/* ---- 87_account.js ---- */
+/* ================= accounts: username/password or Google sign-in, passenger saved to the account ================= */
+// Only on the website build (it talks to the TILEO server). Inside Claude the passenger stays on this device.
+const Account = { base: '', on: false, ready: false, google: '', user: null, profile: null, token: '', status: 'off', saveT: 0, saving: false, dirty: false };
+function accountBase() {
+  if (window.TILEO_API_URL) return String(window.TILEO_API_URL).replace(/\/$/, '');
+  const ws = window.TILEO_RELAY_URL; if (!ws) return '';
+  try { const u = new URL(ws); return (u.protocol === 'wss:' ? 'https://' : 'http://') + u.host; } catch (e) { return ''; }
+}
+function api(path, method = 'GET', body, timeoutMs = 20000) {
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const t = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : 0;
+  const headers = { 'content-type': 'application/json' }; if (Account.token) headers.authorization = 'Bearer ' + Account.token;
+  return fetch(Account.base + path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: ctl ? ctl.signal : undefined, keepalive: method === 'PUT' && JSON.stringify(body || {}).length < 60000 })
+    .then(async r => { clearTimeout(t); let j = null; try { j = await r.json(); } catch (e) { } if (!r.ok) throw Object.assign(new Error(j && j.error || 'Request failed'), { status: r.status }); return j; })
+    .catch(e => { clearTimeout(t); if (e.name === 'AbortError') throw Object.assign(new Error('The server is waking up. Try again in a few seconds.'), { status: 0 }); throw e.status !== undefined ? e : Object.assign(new Error('Can’t reach the server right now.'), { status: 0 }); });
+}
+// called once on load: find the server (it may be asleep on the free plan), then restore a saved session
+async function accountInit() {
+  Account.base = accountBase(); Account.on = !!Account.base && !(window.claude && window.claude.use);
+  if (!Account.on) { renderAccountBar(); return; }
+  Account.token = Store.get('acctToken', '') || '';
+  Account.status = 'connecting'; renderAccountBar();
+  for (let i = 0; i < 6; i++) {
+    try { const c = await api('/api/config', 'GET', null, 60000); Account.ready = !!c.accounts; Account.google = c.google || ''; if (Account.ready) break; if (c.setup) { Account.status = 'setup'; renderAccountBar(); return; } } catch (e) { }
+    await new Promise(r => setTimeout(r, 5000));
+  }
+  if (!Account.ready) { Account.status = 'down'; renderAccountBar(); return; }
+  Account.status = 'ready';
+  if (Account.token) {
+    try { const me = await api('/api/me'); accountSignedIn(me, false); }
+    catch (e) { if (e.status === 401) { Account.token = ''; Store.del('acctToken'); } }
+  }
+  renderAccountBar(); if (G.state === 'boarding') showBoarding();
+}
+function accountSignedIn(r, fresh) {
+  if (r.token) { Account.token = r.token; Store.set('acctToken', r.token); }
+  Account.user = r.user; Account.profile = r.profile && typeof r.profile === 'object' ? r.profile : null;
+  // first sign-in on a device that already has a guest passenger: keep that passenger on the account
+  if (fresh && !Account.profile) { const guest = Store.get('profile', null); if (guest && guest.name) { Account.profile = guest; accountSave(guest); toast('Passenger saved to your account', guest.name + ' now travels with you on any device'); } }
+  if (Account.profile) Store.set('acctProfile', Account.profile);
+  renderAccountBar();
+}
+function accountSignOut() {
+  if (Account.token) api('/api/logout', 'POST').catch(() => { });
+  if (Account.dirty && G.profile) accountSave(G.profile);
+  Account.token = ''; Account.user = null; Account.profile = null; Store.del('acctToken'); Store.del('acctProfile');
+  renderAccountBar();
+}
+// save the passenger to the account (debounced); the local copy is written immediately by saveProfile
+function accountSaveSoon(p) {
+  if (!Account.user) return;
+  Account.profile = p; Account.dirty = true;
+  if (!Account.saveT) Account.saveT = setTimeout(() => { Account.saveT = 0; accountSave(Account.profile); }, 3000);
+}
+function accountSave(p) {
+  if (!Account.user || !p) return;
+  // one save at a time, so an older copy can never land after a newer one
+  if (Account.saving) { Account.again = true; Account.dirty = true; return; }
+  Account.dirty = false; Account.saving = true;
+  api('/api/profile', 'PUT', { profile: p }).catch(e => {
+    if (e.status === 401) { toast('Signed out', 'Sign in again to keep saving your passenger online'); accountSignOut(); }
+    else Account.dirty = true;
+  }).finally(() => { Account.saving = false; if (Account.again) { Account.again = false; if (Account.user) accountSave(Account.profile); } });
+}
+addEventListener('pagehide', () => { if (Account.dirty && G.profile) accountSave(G.profile); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && Account.dirty && G.profile) accountSave(G.profile); });
+
+/* ---------- boarding UI ---------- */
+function renderAccountBar() {
+  const bar = $('acctBar'); if (!bar) return;
+  const h = $('passHint'); if (h) h.textContent = Account.user ? 'Your passenger and stamps save to your account.' : 'Your passenger profile and stamps save on this device.';
+  bar.hidden = !Account.on;
+  if (!Account.on) return;
+  if (Account.user) bar.innerHTML = `<span>Signed in as <b>${esc(Account.user.name)}</b></span><button type="button" class="link" id="acctOut">Sign out</button>`;
+  else if (Account.status === 'connecting') bar.innerHTML = '<span>Connecting to accounts…</span>';
+  else if (Account.status === 'down') bar.innerHTML = '<span>Accounts are offline right now. You can play as a guest.</span>';
+  else if (Account.status === 'setup') bar.innerHTML = '<span>Sign-in opens soon. Play as a guest for now.</span>';
+  else bar.innerHTML = `<span>Keep your passenger on every device</span><button type="button" class="link" id="acctIn">Sign in</button>`;
+  const o = $('acctOut'); if (o) o.onclick = () => { sfx('tick'); accountSignOut(); showBoarding(); };
+  const i = $('acctIn'); if (i) i.onclick = () => { sfx('tick'); openAuth('in'); };
+}
+let authMode = 'in', gisP = null;
+function loadGIS() {
+  return gisP || (gisP = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.onload = res; s.onerror = () => { gisP = null; rej(new Error('gsi')); }; document.head.appendChild(s); }));
+}
+function openAuth(mode) {
+  authMode = mode || 'in';
+  $('passForm').hidden = true; const card = $('authCard'); card.hidden = false;
+  const up = authMode === 'up';
+  card.innerHTML = `<form id="authForm" class="auth" novalidate>
+    <div class="pass-head"><b>${up ? 'CREATE ACCOUNT' : 'SIGN IN'}</b><span>TILEO CRUISE LINES</span></div>
+    <div class="auth-body">
+      <div class="seg auth-seg"><button type="button" data-m="in" aria-pressed="${!up}">Sign in</button><button type="button" data-m="up" aria-pressed="${up}">Create account</button></div>
+      <label class="lbl" for="aUser">Username</label><input class="field" id="aUser" name="username" autocomplete="username" maxlength="20" autocapitalize="none" spellcheck="false" required>
+      <label class="lbl" for="aPass">Password</label><input class="field" id="aPass" name="password" type="password" autocomplete="${up ? 'new-password' : 'current-password'}" maxlength="128" required>
+      ${up ? '<label class="lbl" for="aPass2">Confirm password</label><input class="field" id="aPass2" type="password" autocomplete="new-password" maxlength="128" required><p class="hint">3–20 letters or numbers for the username, at least 8 characters for the password.</p>' : ''}
+      <p class="auth-err" id="aErr" role="alert"></p>
+      <button class="btn btn-primary btn-wide" type="submit" id="aGo">${up ? 'Create account' : 'Sign in'}</button>
+      ${Account.google ? '<div class="auth-or"><span>or</span></div><div id="gBtn" class="gbtn"></div>' : ''}
+      <button class="btn btn-ghost btn-wide" type="button" id="aGuest">Back to boarding pass</button>
+    </div></form>`;
+  card.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { sfx('tick'); openAuth(b.dataset.m); });
+  $('aGuest').onclick = () => { sfx('tick'); closeAuth(); };
+  const err = m => { $('aErr').textContent = m || ''; };
+  $('authForm').onsubmit = async e => {
+    e.preventDefault(); err('');
+    const u = $('aUser').value.trim(), p = $('aPass').value;
+    if (!/^[A-Za-z0-9_.-]{3,20}$/.test(u)) return err('Usernames are 3 to 20 letters, numbers, dots, dashes or underscores.');
+    if (up && p.length < 8) return err('Passwords need at least 8 characters.');
+    if (up && p !== $('aPass2').value) return err('The passwords don’t match.');
+    const go = $('aGo'); go.disabled = true; go.textContent = up ? 'Creating…' : 'Signing in…';
+    try { const r = await api(up ? '/api/signup' : '/api/login', 'POST', { username: u, password: p }); accountSignedIn(r, true); sfx('chip'); closeAuth(); }
+    catch (x) { err(x.message); go.disabled = false; go.textContent = up ? 'Create account' : 'Sign in'; }
+  };
+  if (Account.google) loadGIS().then(() => {
+    const el = $('gBtn'); if (!el || !window.google || !google.accounts) return;
+    google.accounts.id.initialize({ client_id: Account.google, ux_mode: 'popup', auto_select: false, cancel_on_tap_outside: true, callback: async resp => {
+      err('');
+      try { const r = await api('/api/google', 'POST', { credential: resp.credential }); accountSignedIn(r, true); sfx('chip'); closeAuth(); }
+      catch (x) { err(x.message); }
+    } });
+    google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', shape: 'pill', text: 'continue_with', width: Math.min(320, el.clientWidth || 300) });
+  }).catch(() => { const el = $('gBtn'); if (el) el.textContent = 'Google sign-in could not load.'; });
+  setTimeout(() => { const f = $('aUser'); if (f && !IS_TOUCH) f.focus(); }, 50);
+}
+function closeAuth() { $('authCard').hidden = true; $('passForm').hidden = false; showBoarding(); }
+
 /* ---- 90_ui.js ---- */
 /* ================= UI: boarding, creator, HUD, sheets, main loop ================= */
 const SVG = (p, w = 2) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
@@ -6778,16 +7352,22 @@ const IC = {
   drop: '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>',
   sofa: '<path d="M4 11V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3M3 11h18v6H3zM5 17v2M19 17v2"/>',
 };
-const KIND_ICON = { lounge: 'bed', sit: 'seat', bar: 'glass', shop: 'cone', slide: 'slide', zip: 'zip', towerUp: 'jump', towerDown: 'arrow', elevator: 'door', hoops: 'ball', dance: 'music', dj: 'music', tub: 'tub', bowpose: 'flag', npc: 'chat', captain: 'cap', shoot: 'ball', groove: 'music' };
+const KIND_ICON = { lounge: 'bed', sit: 'seat', bar: 'glass', shop: 'cone', slide: 'slide', slides: 'slide', excursions: 'star', zip: 'zip', towerUp: 'jump', towerDown: 'arrow', elevator: 'door', hoops: 'ball', dance: 'music', dj: 'music', tub: 'tub', bowpose: 'flag', npc: 'chat', captain: 'cap', shoot: 'ball', groove: 'music' };
 
 /* ---------- profile ---------- */
-function saveProfile() { if (!G.profile) return; G.profile.clock = { min: Clock.min, day: Clock.day }; Store.set('profile', G.profile); }
+function saveProfile() {
+  if (!G.profile) return; G.profile.clock = { min: Clock.min, day: Clock.day };
+  if (typeof Account === 'object' && Account.user) { Store.set('acctProfile', G.profile); accountSaveSoon(G.profile); }
+  else Store.set('profile', G.profile);
+}
+// the saved passenger: the signed-in account's, otherwise this device's guest passenger
+function storedProfile() { return typeof Account === 'object' && Account.user ? Account.profile : Store.get('profile', null); }
 function newProfile(name) {
   const app = randomAppearance(); if (typeof randomLook === 'function') app.real = randomLook();
   return { name, app, stamps: [], visited: [], slides: [], created: Date.now(), cabin: String(10000 + Math.floor(Math.random() * 7000 + 1000)).slice(0, 5) };
 }
 function loadProfile() {
-  const stored = Store.get('profile', {}), pr = Object.assign(newProfile('Passenger'), stored);
+  const stored = storedProfile() || {}, pr = Object.assign(newProfile('Passenger'), stored);
   if (!stored.app) return pr;
   // the realistic-look field is only kept if the saved profile has one; fantasy avatars from the last version become the photo look
   pr.app = stored.app;
@@ -6862,6 +7442,8 @@ function openSheet(name, o = {}) {
   if (name === 'program') return programSheet();
   if (name === 'map') return mapSheet(o);
   if (name === 'passport') return passportSheet();
+  if (name === 'slides') return slidesSheet();
+  if (name === 'excursions') return excursionsSheet();
   if (name === 'settings') return settingsSheet();
   if (name === 'bar') return barSheet(o.bar);
   if (name === 'album') return albumSheet();
@@ -6918,9 +7500,10 @@ function portsSheet() {
     return `<div class="port"><div><b>${esc(P.name)}</b><small>${esc(P.tag)}${been ? ' · visited' : ''}</small><p>${esc(P.blurb)}</p></div><button class="btn ${here ? 'btn-glass' : 'btn-primary'}" data-p="${P.id}" ${here ? 'disabled' : ''}>${here ? 'You are here' : 'Go ashore'}</button></div>`;
   }).join('');
   const open = portOpen() || G.port;
-  sheet('Ports of call', G.port ? 'At anchor off ' + G.port.P.name + ' · All aboard at 18:00' : open ? 'Tenders run until 17:00 · All aboard at 18:00' : 'Tenders run from 07:00 to 17:00', cards + (G.port ? `<button class="btn btn-glass btn-wide" id="ptBack">Take the tender back to the ship</button>` : open ? '' : `<button class="btn btn-glass btn-wide" id="ptSkip">Rest until the tenders start (07:00)</button>`) + `<p class="kbd">Every port is a fictional island made for the Tileo Infinity.</p>`, body => {
+  sheet('Ports of call', G.port ? 'At anchor off ' + G.port.P.name + ' · All aboard at 18:00' : open ? 'Tenders run until 17:00 · All aboard at 18:00' : 'Tenders run from 07:00 to 17:00', (G.port ? `<button class="menu-item" id="ptXc">Excursions<small>Jet ski loop, parasailing and snorkeling at ${esc(G.port.P.name)}</small></button>` : `<p class="kbd">Excursions at every port: jet ski loop, parasailing and snorkeling.</p>`) + cards + (G.port ? `<button class="btn btn-glass btn-wide" id="ptBack">Take the tender back to the ship</button>` : open ? '' : `<button class="btn btn-glass btn-wide" id="ptSkip">Rest until the tenders start (07:00)</button>`) + `<p class="kbd">Every port is a fictional island made for the Tileo Infinity.</p>`, body => {
     body.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { sfx('tick'); goAshore(b.dataset.p); });
     const back = $('ptBack'); if (back) back.onclick = () => returnToShip();
+    const xc = $('ptXc'); if (xc) xc.onclick = () => openSheet('excursions');
     const sk = $('ptSkip'); if (sk) sk.onclick = () => { closeSheet(); const f = $('fade'); f.classList.add('on'); setTimeout(() => { setClock(PORT_OPEN); setTimeout(() => f.classList.remove('on'), 150); toast('Good morning', 'Tenders are running. Open Ports of call to go ashore.'); }, 380); };
   });
 }
@@ -6932,10 +7515,27 @@ function mapSheet(o) {
   ['surf', 'Wave Rider', 'Deck 15 · Surf simulator'], ['golf', 'Tileo Links', 'Deck 15 · Mini golf'], ['casino', 'Tileo Casino', 'Deck 6 · Aft'], ['suite', 'Your Suite', 'Deck 12 · Balcony']];
   const map = { aft: 'court', sun: 'sundeck', tower: 'waterpark' };
   const btns = zones.map(([id, n, d]) => `<button class="zone-b ${(map[here] || here) === id ? 'here' : ''}" data-z="${id}"><b>${n}</b><small>${d}</small></button>`).join('');
-  sheet(o.elevator ? 'Elevator' : 'Ship map', o.elevator ? 'Choose a deck. You are on ' + areaLabel(here) : 'You are on ' + areaLabel(here) + '. Tap a deck to go there.', planSVG() + `<div class="zones">${btns}</div><button class="menu-item" id="mpPorts">Ports of call<small>${portOpen() ? 'Tenders running now · go ashore for the day' : 'Tenders run 07:00 to 17:00'}</small></button>`, body => {
+  const slidesBtn = `<button class="menu-item" id="mpSlides">Water slides<small>Riptide, Blue Abyss and Free Fall · Deck 19</small></button>`;
+  sheet(o.elevator ? 'Elevator' : 'Ship map', o.elevator ? 'Choose a deck. You are on ' + areaLabel(here) : 'You are on ' + areaLabel(here) + '. Tap a deck to go there.', planSVG() + `<div class="zones">${btns}</div>${slidesBtn}<button class="menu-item" id="mpPorts">Ports of call<small>${portOpen() ? 'Tenders running now · go ashore for the day' : 'Tenders run 07:00 to 17:00'}</small></button>`, body => {
     body.querySelectorAll('[data-z]').forEach(b => b.onclick = () => { sfx('tick'); travelTo(b.dataset.z); });
     $('mpPorts').onclick = () => openSheet('ports');
+    $('mpSlides').onclick = () => openSheet('slides');
   });
+}
+// the three water slides: ride from anywhere on the ship (the tower lift takes you to Deck 19)
+function slidesSheet() {
+  const rode = new Set(G.profile.slides || []);
+  const cards = World.slides.map((s, i) => `<div class="port"><div><b>${esc(s.name)}</b><small>${rode.has(s.id) ? 'Ridden' : 'Not ridden yet'}${G.profile.slideBest && G.profile.slideBest[s.id] ? ' · best ' + G.profile.slideBest[s.id] + ' km/h' : ''}</small><p>${esc(s.blurb)}</p></div><button class="btn btn-primary" data-s="${i}">Ride</button></div>`).join('');
+  sheet('Water slides', 'Splash Summit · Deck 19 tower', cards, body => body.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { sfx('tick'); closeSheet(); rideSlide(+b.dataset.s); }));
+}
+function rideSlide(i) {
+  const s = World.slides[i]; if (!s) return;
+  if (G.port) { toast('The slides are on the ship', 'Head back aboard to ride them'); return; }
+  if (Player.activity) endActivity();
+  const dir = s.curve.getTangentAt(0), x = s.start.x - dir.x * 1.2, z = s.start.z - dir.z * 1.2;
+  const near = Math.hypot(Player.pos.x - x, Player.pos.z - z) < 6 && Math.abs(Player.pos.y - DK.tower) < 1;
+  if (near) { actSlide(i); return; }
+  fadeTeleport(x, DK.tower, z, Math.atan2(dir.x, dir.z), () => { leaveSuiteState(); setTimeout(() => actSlide(i), 250); });
 }
 function passportSheet() {
   const got = new Set(G.profile.stamps), n = got.size;
@@ -6964,7 +7564,8 @@ function settingsSheet() {
     <button class="menu-item" id="sAlbum">Photo album<small>${G.photos.length} saved</small></button>
     <button class="menu-item" id="sRadioList">Tileo Radio<small>${SONGS.length} songs by djtileo</small></button>
     <button class="menu-item" id="sOutfit">Change outfit<small>Back to the dressing room</small></button>
-    <button class="menu-item" id="sOut">Sign out<small>Return to the boarding pass</small></button>
+    ${typeof Account === 'object' && Account.on ? `<button class="menu-item" id="sAcct">${Account.user ? 'Account: ' + esc(Account.user.name) : 'Sign in'}<small>${Account.user ? 'Your passenger is saved to your account' : 'Keep your passenger on every device'}</small></button>` : ''}
+    <button class="menu-item" id="sOut">Leave the ship<small>Return to the boarding pass</small></button>
     <p class="kbd">${IS_TOUCH ? 'Drag the left side to walk, drag the right side to look, pinch to zoom.' : 'WASD to walk · Shift to run · Space to jump · E to interact · F to eat or drink · Q for emotes · T to chat · M map · P program · C camera · drag to look · scroll to zoom'}</p>
     <p class="kbd">TILEO Cruise Lines and the Tileo Infinity are fictional. Your passenger profile is stored only in this browser.</p>
     <p class="kbd">Realistic people: Microsoft Rocketbox avatar library (MIT license). Walk, run, idle and dance motion from Mixamo.</p>`, body => {
@@ -6978,6 +7579,7 @@ function settingsSheet() {
     $('sAlbum').onclick = () => openSheet('album'); $('sRadioList').onclick = () => openSheet('music');
     $('sOutfit').onclick = () => { closeSheet(); enterCreator(true); };
     $('sOut').onclick = () => { closeSheet(); saveProfile(); if (G.port) teardownPort(); leaveSuiteState(); showBoarding(); };
+    if ($('sAcct')) $('sAcct').onclick = () => { closeSheet(); saveProfile(); if (G.port) teardownPort(); leaveSuiteState(); showBoarding(); if (!Account.user) openAuth('in'); };
   });
 }
 
@@ -6988,12 +7590,13 @@ function showBoarding() {
   closePanel();
   if (Player.char) { Player.char.rig.root.visible = false; if (Player.char.real) Player.char.real.holder.visible = false; }
   G.shadowExtent = 230;
-  const pr = Store.get('profile', null);
+  const pr = storedProfile(); if (typeof renderAccountBar === 'function') renderAccountBar();
   if (pr && pr.name) {
     $('passNew').hidden = true; $('passBack').hidden = false;
     $('backName').textContent = pr.name; $('bCabin').textContent = pr.cabin; $('bDeck').textContent = pr.cabin.slice(0, 2); $('bStamps').textContent = pr.stamps.length + ' / ' + STAMPS.length;
   } else {
     $('passNew').hidden = false; $('passBack').hidden = true;
+    if (typeof Account === 'object' && Account.user && !$('passName').value) $('passName').value = Account.user.name.slice(0, 18);
     const cab = String(Math.floor(Math.random() * 7000) + 10000).slice(0, 5); $('pCabin').textContent = cab; $('pDeck').textContent = cab.slice(0, 2); G.pendingCabin = cab;
   }
 }
@@ -7278,6 +7881,7 @@ async function boot(restore) {
     onResize();
     setLoad(1, 'All aboard');
     $('loading').style.transition = 'opacity .6s'; $('loading').style.opacity = '0'; setTimeout(() => $('loading').hidden = true, 650);
+    if (typeof accountInit === 'function') accountInit();
     if (restore && restore.state === 'play' && Store.get('profile', null)) {
       G.profile = loadProfile();
       if (restore.clock) { Clock.min = restore.clock; Clock.day = restore.day || 1; }
@@ -7290,7 +7894,7 @@ async function boot(restore) {
   }
 }
 window.TILEO_DEBUG = { G, World, Env, Player, Clock, NPCS, Audio, Cam, T, Input, setClock, travelTo, applyQuality, actSlide, actZip, actHoops, actDance, enterPhoto, takePhoto, openSheet, startPlay, stamp, onActionPressed, scanHotspots,
-  PEOPLE_BASES, PHOTO_LOOK, randomLook, cleanLook, setRealBody, initPlayer, NPCS, Staff, enterCreator, setupPost, nextGenOn, NG, saveProfile, goAshore, returnToShip, enterSuite, startDecorate, openSlots, openBlackjack, openRoulette, startTrivia, answerTrivia, actSurf, actGolf, consume, giveFood, openMenu, Net, Radio, Suite, Food, Trivia, GOLF, PORTS, closePanel, endActivity, netSay, readRemote, myLayout, showSuite,
+  Account, PEOPLE_BASES, PHOTO_LOOK, randomLook, cleanLook, setRealBody, initPlayer, NPCS, Staff, enterCreator, setupPost, nextGenOn, NG, saveProfile, goAshore, returnToShip, enterSuite, startDecorate, openSlots, openBlackjack, openRoulette, startTrivia, answerTrivia, actSurf, actGolf, consume, giveFood, openMenu, Net, Radio, Suite, Food, Trivia, GOLF, PORTS, closePanel, endActivity, netSay, readRemote, myLayout, showSuite,
   sim(n, dt = 1 / 30) { for (let i = 0; i < n; i++) stepFrame(dt, true); return Player.pos.toArray().map(v => +v.toFixed(2)); },
   render() { stepFrame(1 / 60); } };
 requestAnimationFrame(loop);

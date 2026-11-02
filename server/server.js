@@ -5,10 +5,13 @@
  * Players connect over a WebSocket, join a room (an auto-filled public deck or a private ship),
  * and send their "presence" (name, outfit, position, animation, speech bubble...). The server keeps
  * each player's latest presence, hands newcomers a snapshot, and forwards updates to everyone else
- * in the room. Nothing is stored on disk; a restart simply empties the ship.
+ * in the room. Nothing about the ship is stored; a restart simply empties it.
+ * Accounts (sign-in and saved passengers) live in ./accounts.js and use Postgres when DATABASE_URL is set.
  */
 const http = require('http');
 const { WebSocketServer } = require('./vendor/ws');
+const { createAccounts } = require('./accounts');
+const accounts = createAccounts();
 
 const PORT = Number(process.env.PORT) || 10000;
 const ORIGINS = (process.env.ALLOWED_ORIGINS || '*').split(',').map(s => s.trim()).filter(Boolean);
@@ -67,6 +70,7 @@ function cleanPresence(c, d) {
 }
 
 const server = http.createServer((req, res) => {
+  if (accounts(req, res)) return;
   if (req.url === '/health' || req.url === '/') {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
     res.end(JSON.stringify({ ok: true, service: 'tileo-multiplayer', online: countPlayers(), rooms: rooms.size, joins: totalJoins }));
