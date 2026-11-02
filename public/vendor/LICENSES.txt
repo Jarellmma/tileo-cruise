@@ -71,3 +71,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+Avatar models (models/Michelle.glb, Soldier.glb, Xbot.glb) and the animations in models/anims.json come from Mixamo (Adobe),
+as distributed with the three.js examples (examples/models/gltf). Embedded animations were removed; the meshes are unchanged.

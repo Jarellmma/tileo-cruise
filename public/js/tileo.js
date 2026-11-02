@@ -84,7 +84,13 @@ function setupPost() {
   if (G.post) { G.post.composer.renderTarget1.dispose(); G.post.composer.renderTarget2.dispose(); G.post = null; }
   const want = q.bloom && G.hdrOK && typeof T.EffectComposer === 'function' && typeof T.UnrealBloomPass === 'function';
   const prevTM = r.toneMapping;
-  if (!want) {
+  const ng = typeof nextGenOn === 'function' && nextGenOn() && typeof T.EffectComposer === 'function';
+  if (typeof applyNextGenMaterials === 'function') applyNextGenMaterials(ng);
+  if (ng) {
+    r.toneMapping = T.NoToneMapping;
+    const w = Math.max(2, Math.floor(innerWidth * r.getPixelRatio())), h = Math.max(2, Math.floor(innerHeight * r.getPixelRatio()));
+    G.post = setupCinePost(r, q, w, h);
+  } else if (!want) {
     r.toneMapping = T.ACESFilmicToneMapping;
   } else {
     r.toneMapping = T.NoToneMapping;
@@ -136,6 +142,9 @@ function onResize() {
     G.post.composer.setPixelRatio(1);
     G.post.composer.setSize(Math.floor(w * pr), Math.floor(h * pr));
     G.post.bloom.setSize(Math.floor(w * pr / 2), Math.floor(h * pr / 2));
+    if (G.post.ao) G.post.ao.setSize(Math.floor(w * pr), Math.floor(h * pr));
+    if (G.post.smaa) G.post.smaa.setSize(Math.floor(w * pr), Math.floor(h * pr));
+    if (G.post.dof) { G.post.dof.uniforms.aspect.value = w / h; if (G.post.dof.renderTargetDepth) G.post.dof.renderTargetDepth.setSize(Math.floor(w * pr), Math.floor(h * pr)); }
   }
   if (G.onResizeExtra) G.onResizeExtra();
 }
@@ -144,10 +153,13 @@ function renderFrame(scene, camera) {
   const r = G.renderer;
   if (G.post) {
     G.post.rp.scene = scene; G.post.rp.camera = camera;
-    const n = G.night || 0;
-    G.post.bloom.threshold = lerp(2.2, 1.05, n);
-    G.post.bloom.strength = lerp(0.3, 0.62, n) * (G.bloomBoost || 1);
-    G.post.fin.uniforms.exposure.value = G.exposure || 1;
+    if (G.post.cine) updateCinePost(G.post, scene, camera);
+    else {
+      const n = G.night || 0;
+      G.post.bloom.threshold = lerp(2.2, 1.05, n);
+      G.post.bloom.strength = lerp(0.3, 0.62, n) * (G.bloomBoost || 1);
+      G.post.fin.uniforms.exposure.value = G.exposure || 1;
+    }
     G.post.composer.render();
   } else {
     r.toneMappingExposure = G.exposure || 1;
@@ -615,6 +627,244 @@ function upFrames(curve, segs) {
 }
 function arcProfile(r, a0, a1, n) { const out = []; for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; out.push([Math.cos(a) * r, Math.sin(a) * r]); } return out; }
 
+/* ---- 02_cine.js ---- */
+/* ================= Next-Gen renderer: contact shadows, cinematic grade, sun glare, SMAA, photo-mode depth of field ================= */
+// Contact shadows (ambient occlusion): one depth-only render at half resolution, normals rebuilt from depth,
+// world-space radius and a range falloff so foreground objects never cast halos on the sky or far decks.
+class CineAOPass extends T.Pass {
+  constructor(scene, camera, w, h) {
+    super(); this.scene = scene; this.camera = camera; this.needsSwap = true;
+    this.depthMat = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, blending: T.NoBlending });
+    this.params = { radius: 0.75, intensity: 1.5, bias: 0.02, power: 1.4, strength: 0.75 };
+    const vs = 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }';
+    this.aoMat = new T.ShaderMaterial({
+      defines: { SAMPLES: 12 }, extensions: { derivatives: true },
+      uniforms: { tDepth: { value: null }, invProj: { value: new T.Matrix4() }, projY: { value: 1 }, res: { value: new T.Vector2(1, 1) }, radius: { value: 0.75 }, intensity: { value: 1.5 }, bias: { value: 0.02 }, power: { value: 1.4 } },
+      vertexShader: vs,
+      fragmentShader: `#include <packing>
+        uniform sampler2D tDepth; uniform mat4 invProj; uniform float projY; uniform vec2 res; uniform float radius; uniform float intensity; uniform float bias; uniform float power; varying vec2 vUv;
+        vec3 vpos(vec2 uv){ float d=unpackRGBAToDepth(texture2D(tDepth,uv)); vec4 v=invProj*vec4(uv*2.0-1.0,d*2.0-1.0,1.0); return v.xyz/v.w; }
+        float hash(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
+        void main(){
+          float d=unpackRGBAToDepth(texture2D(tDepth,vUv));
+          if(d>0.99999){ gl_FragColor=vec4(1.0); return; }
+          vec3 P=vpos(vUv); vec3 N=normalize(cross(dFdx(P),dFdy(P)));
+          float rs=min(radius*projY/(-P.z)*0.5,0.12);
+          float ang=hash(vUv*res)*6.2831853, occ=0.0;
+          for(int i=0;i<SAMPLES;i++){
+            float t=(float(i)+0.5)/float(SAMPLES); float a=ang+float(i)*2.3999632;
+            vec2 o=vec2(cos(a),sin(a))*sqrt(t)*rs*vec2(res.y/res.x,1.0);
+            vec3 S=vpos(vUv+o); vec3 v=S-P; float vv=dot(v,v);
+            float f=max(dot(v,N)-bias*(-P.z)*0.02,0.0)/(vv+0.0025*radius*radius);
+            f*=1.0-smoothstep(radius*radius,4.0*radius*radius,vv);
+            occ+=f;
+          }
+          float ao=pow(clamp(1.0-intensity*radius*occ/float(SAMPLES)*1.6,0.0,1.0),power);
+          gl_FragColor=vec4(vec3(mix(1.0,ao,smoothstep(140.0,60.0,-P.z))),1.0);
+        }`
+    });
+    this.blurMat = new T.ShaderMaterial({
+      uniforms: { tAO: { value: null }, tDepth: { value: null }, dir: { value: new T.Vector2(1, 0) }, res: { value: new T.Vector2(1, 1) }, near: { value: 0.25 }, far: { value: 14000 } },
+      vertexShader: vs,
+      fragmentShader: `#include <packing>
+        uniform sampler2D tAO; uniform sampler2D tDepth; uniform vec2 dir; uniform vec2 res; uniform float near; uniform float far; varying vec2 vUv;
+        float lz(vec2 uv){ return -perspectiveDepthToViewZ(unpackRGBAToDepth(texture2D(tDepth,uv)),near,far); }
+        void main(){
+          float z0=lz(vUv), s=0.0, w=0.0;
+          for(int i=-4;i<=4;i++){ vec2 uv=vUv+dir*float(i)/res; float z=lz(uv); float wt=exp(-float(i*i)/8.0)*(1.0-smoothstep(0.02,0.08,abs(z-z0)/z0)); s+=texture2D(tAO,uv).r*wt; w+=wt; }
+          gl_FragColor=vec4(vec3(s/max(w,1e-4)),1.0);
+        }`
+    });
+    this.compMat = new T.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null }, tAO: { value: null }, strength: { value: 0.75 } },
+      vertexShader: vs,
+      fragmentShader: `uniform sampler2D tDiffuse; uniform sampler2D tAO; uniform float strength; varying vec2 vUv;
+        void main(){ vec4 c=texture2D(tDiffuse,vUv); gl_FragColor=vec4(c.rgb*mix(1.0,texture2D(tAO,vUv).r,strength),c.a); }`
+    });
+    this.quad = new T.FullScreenQuad(this.aoMat);
+    this.setSize(w, h);
+  }
+  setSize(w, h) {
+    const hw = Math.max(2, Math.floor(w / 2)), hh = Math.max(2, Math.floor(h / 2));
+    if (this.depthRT) { this.depthRT.dispose(); this.aoRT.dispose(); this.blurRT.dispose(); }
+    this.depthRT = new T.WebGLRenderTarget(hw, hh, { minFilter: T.NearestFilter, magFilter: T.NearestFilter, format: T.RGBAFormat });
+    this.aoRT = new T.WebGLRenderTarget(hw, hh, { minFilter: T.LinearFilter, magFilter: T.LinearFilter, format: T.RGBAFormat });
+    this.blurRT = this.aoRT.clone();
+    this.aoMat.uniforms.tDepth.value = this.depthRT.texture; this.blurMat.uniforms.tDepth.value = this.depthRT.texture;
+    this.aoMat.uniforms.res.value.set(hw, hh); this.blurMat.uniforms.res.value.set(hw, hh);
+    this.compMat.uniforms.tAO.value = this.aoRT.texture;
+  }
+  render(renderer, writeBuffer, readBuffer) {
+    const sc = this.scene, cam = this.camera, P = this.params;
+    // glass, water, foliage cards, particles and sky domes do not occlude: leave them out of the depth pass
+    if (!this.skip || this.skipScene !== sc || this.skipN !== sc.children.length || G.frame - (this.skipF || 0) > 300) {
+      this.skip = []; this.skipScene = sc; this.skipN = sc.children.length; this.skipF = G.frame;
+      sc.traverse(o => { const m = o.material; if (o.isPoints || o.isSprite || o.isLine || (m && [].concat(m).some(x => x.transparent || x.alphaTest > 0 || x.depthWrite === false || x.side === T.BackSide))) this.skip.push(o); });
+    }
+    const vis = this.skip.map(o => o.visible); this.skip.forEach(o => o.visible = false);
+    const ov = sc.overrideMaterial, bg = sc.background, cc = renderer.getClearColor(new T.Color()), ca = renderer.getClearAlpha();
+    sc.overrideMaterial = this.depthMat; sc.background = null;
+    renderer.setRenderTarget(this.depthRT); renderer.setClearColor(0xffffff, 1); renderer.clear(); renderer.render(sc, cam);
+    sc.overrideMaterial = ov; sc.background = bg; renderer.setClearColor(cc, ca);
+    this.skip.forEach((o, i) => o.visible = vis[i]);
+    const u = this.aoMat.uniforms; u.invProj.value.copy(cam.projectionMatrixInverse); u.projY.value = cam.projectionMatrix.elements[5];
+    u.radius.value = P.radius; u.intensity.value = P.intensity; u.bias.value = P.bias; u.power.value = P.power;
+    this.quad.material = this.aoMat; renderer.setRenderTarget(this.aoRT); this.quad.render(renderer);
+    const b = this.blurMat.uniforms; b.near.value = cam.near; b.far.value = cam.far;
+    this.quad.material = this.blurMat;
+    b.tAO.value = this.aoRT.texture; b.dir.value.set(1, 0); renderer.setRenderTarget(this.blurRT); this.quad.render(renderer);
+    b.tAO.value = this.blurRT.texture; b.dir.value.set(0, 1); renderer.setRenderTarget(this.aoRT); this.quad.render(renderer);
+    const c = this.compMat.uniforms; c.tDiffuse.value = readBuffer.texture; c.strength.value = P.strength;
+    this.quad.material = this.compMat; renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer); this.quad.render(renderer);
+  }
+}
+
+// Final pass: ACES filmic, film grade (lifted shadows, warm highlights, gentle S-curve), vignette, grain,
+// slight lens fringing and a sun glare (halo, streak, ghosts) hidden whenever the sun is behind geometry.
+const CineShader = {
+  uniforms: {
+    tDiffuse: { value: null }, exposure: { value: 1 }, vignette: { value: 0.24 }, sat: { value: 1.08 }, grain: { value: 0.012 }, time: { value: 0 }, ca: { value: 0.0006 },
+    lift: { value: new T.Vector3(0.0, 0.004, 0.01) }, warm: { value: 0.04 },
+    sunUV: { value: new T.Vector2(-9, -9) }, sunOn: { value: 0 }, sunColor: { value: new T.Color(1, 0.8, 0.6) }, tSunDepth: { value: null }, aspect: { value: 1 }
+  },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: `#include <packing>
+    uniform sampler2D tDiffuse; uniform float exposure; uniform float vignette; uniform float sat; uniform float grain; uniform float time; uniform float ca; uniform vec3 lift; uniform float warm;
+    uniform vec2 sunUV; uniform float sunOn; uniform vec3 sunColor; uniform sampler2D tSunDepth; uniform float aspect; varying vec2 vUv;
+    vec3 RRTAndODTFit(vec3 v){ vec3 a=v*(v+0.0245786)-0.000090537; vec3 b=v*(0.983729*v+0.4329510)+0.238081; return a/b; }
+    vec3 aces(vec3 c){
+      const mat3 I=mat3(vec3(0.59719,0.07600,0.02840),vec3(0.35458,0.90834,0.13383),vec3(0.04823,0.01566,0.83777));
+      const mat3 O=mat3(vec3(1.60475,-0.10208,-0.00327),vec3(-0.53108,1.10813,-0.07276),vec3(-0.07367,-0.00605,1.07602));
+      c*=exposure/0.6; c=I*c; c=RRTAndODTFit(c); c=O*c; return clamp(c,0.0,1.0);
+    }
+    vec3 toSRGB(vec3 c){ return mix(pow(c,vec3(0.41666))*1.055-vec3(0.055), c*12.92, vec3(lessThanEqual(c,vec3(0.0031308)))); }
+    float h(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
+    float sky(vec2 uv){ return step(0.99999, unpackRGBAToDepth(texture2D(tSunDepth, clamp(uv,0.001,0.999)))); }
+    void main(){
+      vec2 d=vUv-0.5; float r2=dot(d,d);
+      vec3 c=vec3(texture2D(tDiffuse,vUv-d*ca*r2*8.0).r, texture2D(tDiffuse,vUv).g, texture2D(tDiffuse,vUv+d*ca*r2*8.0).b);
+      if(sunOn>0.001){
+        float vis=0.0; vec2 px=vec2(0.006/aspect,0.006);
+        vis+=sky(sunUV); vis+=sky(sunUV+px*vec2(1.0,0.0)); vis+=sky(sunUV-px*vec2(1.0,0.0)); vis+=sky(sunUV+px*vec2(0.0,1.0)); vis+=sky(sunUV-px*vec2(0.0,1.0));
+        vis*=sunOn/5.0;
+        if(vis>0.0){
+          vec2 s=(vUv-sunUV)*vec2(aspect,1.0); float r=length(s);
+          vec3 g=sunColor*(exp(-r*7.0)*0.18+exp(-r*26.0)*0.9+exp(-r*110.0)*2.6);
+          g+=sunColor*exp(-abs(s.y)*120.0)*exp(-abs(s.x)*2.6)*0.35;
+          vec2 sv=sunUV-0.5;
+          for(int k=0;k<4;k++){
+            float f=k==0?-0.55:k==1?-0.25:k==2?0.4:1.25; float rad=k==0?0.07:k==1?0.035:k==2?0.05:0.11;
+            vec3 tint=k==0?vec3(0.35,0.55,1.0):k==1?vec3(1.0,0.6,0.35):k==2?vec3(0.5,1.0,0.7):vec3(0.9,0.5,1.0);
+            float gr=length((vUv-(0.5-sv*f))*vec2(aspect,1.0));
+            g+=tint*sunColor*(smoothstep(rad,rad*0.55,gr)*0.05+smoothstep(rad*1.02,rad*0.9,gr)*smoothstep(rad*0.8,rad*0.92,gr)*0.04);
+          }
+          c+=g*vis;
+        }
+      }
+      c=aces(c);
+      float l=dot(c,vec3(0.2126,0.7152,0.0722)); c=mix(vec3(l),c,sat);
+      c=c+lift*(1.0-c);
+      c*=mix(vec3(1.0),vec3(1.0+warm,1.0+warm*0.4,1.0-warm*0.6),smoothstep(0.35,0.9,l));
+      c=c*c*(3.0-2.0*c)*0.18+c*0.82;
+      c*=1.0-vignette*smoothstep(0.2,0.9,r2*2.4);
+      c+=(h(vUv*vec2(1731.0,977.0)+time)-0.5)*grain;
+      gl_FragColor=vec4(toSRGB(clamp(c,0.0,1.0)),1.0);
+    }`
+};
+const NG = { lastSun: new T.Vector3(), warned: false };
+function nextGenOn() { return !!(G.settings && G.settings.ng && G.quality && G.quality.bloom && G.hdrOK && T.SMAAPass && T.FullScreenQuad); }
+function setupCinePost(r, q, w, h) {
+  const rt = new T.WebGLRenderTarget(w, h, { minFilter: T.LinearFilter, magFilter: T.LinearFilter, format: T.RGBAFormat, type: T.HalfFloatType });
+  const composer = new T.EffectComposer(r, rt);
+  const rp = new T.RenderPass(G.scene, G.camera); composer.addPass(rp);
+  const ao = q.detail >= 1 ? new CineAOPass(G.scene, G.camera, w, h) : null; if (ao) composer.addPass(ao);
+  const bloom = new T.UnrealBloomPass(new T.Vector2(Math.floor(w / 2), Math.floor(h / 2)), 0.55, 0.5, 1.3); composer.addPass(bloom);
+  // bloom only what glows: by day the sky is left out (it is far brighter than the threshold near the sun and would veil
+  // the whole frame); the sun gets its own glare in the final pass. Very bright pixels are clamped so a glint stays a glint.
+  const hu = bloom.highPassUniforms;
+  hu.tDepth = { value: ao ? ao.depthRT.texture : null }; hu.skyCut = { value: 0 }; hu.maxV = { value: 6 };
+  bloom.materialHighPassFilter.fragmentShader = `#include <packing>
+    uniform sampler2D tDiffuse; uniform vec3 defaultColor; uniform float defaultOpacity; uniform float luminosityThreshold; uniform float smoothWidth;
+    uniform sampler2D tDepth; uniform float skyCut; uniform float maxV; varying vec2 vUv;
+    void main(){
+      vec4 texel=texture2D(tDiffuse,vUv); float v=dot(texel.xyz,vec3(0.299,0.587,0.114));
+      vec3 c=texel.rgb*min(1.0,maxV/max(v,1e-4));
+      if(skyCut>0.0){ float d=unpackRGBAToDepth(texture2D(tDepth,vUv)); c*=1.0-skyCut*step(0.99999,d); }
+      float a=smoothstep(luminosityThreshold,luminosityThreshold+smoothWidth,v);
+      gl_FragColor=mix(vec4(defaultColor.rgb,defaultOpacity),vec4(c,1.0),a);
+    }`;
+  bloom.materialHighPassFilter.needsUpdate = true;
+  let dof = null;
+  if (T.BokehPass) { dof = new T.BokehPass(G.scene, G.camera, { focus: 5, aperture: 0.0005, maxblur: 0.011, width: w, height: h }); dof.needsSwap = true; dof.enabled = false; composer.addPass(dof); }
+  const fin = new T.ShaderPass(CineShader); composer.addPass(fin);
+  const smaa = new T.SMAAPass(w, h); composer.addPass(smaa);
+  return { composer, rp, bloom, fin, ao, dof, smaa, cine: true };
+}
+function updateCinePost(P, scene, camera) {
+  if (P.ao) { P.ao.scene = scene; P.ao.camera = camera; }
+  const n = G.night || 0, gold = scene === G.scene ? (Env.golden || 0) : 0;
+  // tight bloom by day (neon and glints, no veil from the bright sky), wide and soft at night
+  P.bloom.threshold = lerp(lerp(1.9, 1.6, gold), 1.0, n);
+  P.bloom.strength = lerp(lerp(0.45, 0.55, gold), 0.68, n) * (G.bloomBoost || 1);
+  P.bloom.radius = lerp(0.3, 0.5, n);
+  const hu = P.bloom.highPassUniforms; hu.tDepth.value = P.ao ? P.ao.depthRT.texture : null; hu.skyCut.value = P.ao && P.ao.enabled ? 1 - n : 0;
+  const u = P.fin.uniforms;
+  u.exposure.value = (G.exposure || 1) * (1 - gold * 0.12); u.time.value = G.time % 100; u.warm.value = 0.035 + gold * 0.11; u.sat.value = 1.08 + gold * 0.16; u.aspect.value = innerWidth / innerHeight;
+  // sun glare: only outdoors in the game world, with the sun above the horizon and in front of the camera
+  let on = 0;
+  if (P.ao && P.ao.enabled && scene === G.scene && Env.sunDir.y > -0.02) {
+    const p = NG.lastSun.copy(Env.sunDir).multiplyScalar(3000).add(camera.position).project(camera);
+    if (p.z < 1 && Math.abs(p.x) < 1.3 && Math.abs(p.y) < 1.3) { u.sunUV.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5); on = smooth(-0.02, 0.06, Env.sunDir.y) * (0.55 + gold * 0.9) * (1 - n); }
+    u.tSunDepth.value = P.ao.depthRT.texture;
+    u.sunColor.value.copy(Env.sunColor);
+  }
+  u.sunOn.value = on * (G.glare != null ? G.glare : 1);
+  // depth of field: photo mode only, focused on the passenger
+  if (P.dof) {
+    const want = G.state === 'photo' && scene === G.scene && !G.testHold;
+    P.dof.enabled = want;
+    if (want && Player.char) { const f = camera.position.distanceTo(Player.char.rig.root.position) + 0.2; P.dof.uniforms.focus.value = f; P.dof.uniforms.aperture.value = 0.0028 / Math.max(2, f); P.dof.uniforms.maxblur.value = 0.012; P.dof.uniforms.nearClip.value = camera.near; P.dof.uniforms.farClip.value = camera.far; }
+  }
+}
+// performance guard for phones: if frames stay slow at the lowest resolution step, drop contact shadows first
+function nextGenSlow() {
+  const P = G.post; if (!P || !P.cine || !P.ao || !P.ao.enabled) return false;
+  P.ao.enabled = false;
+  if (!NG.warned && G.state === 'play') { NG.warned = true; toast('Lighter effects', 'Contact shadows turned off to keep the game smooth'); }
+  return true;
+}
+
+// Physically based deck: normal + roughness maps generated from the teak texture so a low sun glints off the planks
+function buildPBRMaps() {
+  if (TEX.teakN || !TEX.teak || !TEX.teak.image) return;
+  const src = TEX.teak.image, w = src.width, h = src.height;
+  const g = src.getContext('2d'), px = g.getImageData(0, 0, w, h).data;
+  const H = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) H[i] = (px[i * 4] * 0.3 + px[i * 4 + 1] * 0.59 + px[i * 4 + 2] * 0.11) / 255;
+  const nc = document.createElement('canvas'); nc.width = w; nc.height = h; const ng = nc.getContext('2d'), nd = ng.createImageData(w, h);
+  const rc = document.createElement('canvas'); rc.width = w; rc.height = h; const rg = rc.getContext('2d'), rd = rg.createImageData(w, h);
+  const at = (x, y) => H[((y + h) % h) * w + ((x + w) % w)];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (at(x + 1, y) - at(x - 1, y)) * 3.2, dy = (at(x, y + 1) - at(x, y - 1)) * 3.2;
+    const L = Math.hypot(dx, dy, 1), i = (y * w + x) * 4;
+    nd.data[i] = (-dx / L * 0.5 + 0.5) * 255; nd.data[i + 1] = (dy / L * 0.5 + 0.5) * 255; nd.data[i + 2] = (1 / L * 0.5 + 0.5) * 255; nd.data[i + 3] = 255;
+    const v = at(x, y), rough = clamp(0.38 + (0.42 - v) * 0.9 + (v < 0.12 ? 0.35 : 0), 0.25, 0.95) * 255;
+    rd.data[i] = rough; rd.data[i + 1] = rough; rd.data[i + 2] = rough; rd.data[i + 3] = 255;
+  }
+  ng.putImageData(nd, 0, 0); rg.putImageData(rd, 0, 0);
+  const mk = c => { const t = new T.CanvasTexture(c); t.wrapS = t.wrapT = T.RepeatWrapping; t.repeat.copy(TEX.teak.repeat); t.anisotropy = Math.min(8, G.maxAniso || 1); return t; };
+  TEX.teakN = mk(nc); TEX.teakR = mk(rc);
+}
+function applyNextGenMaterials(on) {
+  if (!MAT.teak) return;
+  if (on) buildPBRMaps();
+  const m = MAT.teak;
+  m.normalMap = on ? TEX.teakN : null; m.roughnessMap = on ? TEX.teakR : null; m.roughness = on ? 1 : 0.72;
+  if (on) m.normalScale.set(0.55, 0.55);
+  m.envMapIntensity = on ? 0.85 : 0.6; m.needsUpdate = true;
+  for (const k of ['steel', 'chrome', 'frame', 'glass', 'domeGlass']) if (MAT[k]) { MAT[k].envMapIntensity = on ? 1.4 : 1; MAT[k].needsUpdate = true; }
+}
+
 /* ---- 10_env.js ---- */
 /* ================= environment: sky, sun/moon, stars, ocean, lighting ================= */
 const Env = {
@@ -890,6 +1140,9 @@ function updateEnvironment(dt, minutes, focus) {
   const su = Env.sky.material.uniforms;
   su.sunPosition.value.copy(Env.sunDir).multiplyScalar(4000);
   su.turbidity.value = lerp(4.2, 9, Env.golden); su.rayleigh.value = lerp(1.1, 2.6, Env.golden) + night * 0.5;
+  // Next-Gen look: a deeper, redder sunset sky (more Rayleigh and Mie glow around the low sun)
+  const cine = G.post && G.post.cine ? Env.golden : 0;
+  su.rayleigh.value += cine * 1.6; su.mieCoefficient.value = 0.004 + cine * 0.005;
   Env.tint.material.uniforms.uNight.value = night;
   Env.stars.material.uniforms.uNight.value = smooth(0.35, 0.95, night);
   Env.stars.material.uniforms.uTime.value = G.time;
@@ -3299,7 +3552,7 @@ function buildCharMesh(c) {
     const variant = pt.k.startsWith('chestA') ? 'chestAloha' : pt.k.startsWith('chestS') ? 'chestStripe' : pt.color === SKIN[c.app.skin] ? 'skin' : pt.k.startsWith('hair') ? 'hair' : pt.k === 'shades' ? 'glossy' : '';
     const m = new T.Mesh(geo, charMat(pt.color, variant));
     if (pt.sc) m.scale.set(pt.sc[0], pt.sc[1], pt.sc[2]);
-    m.castShadow = true; m.receiveShadow = true;
+    m.castShadow = true; m.receiveShadow = true; m.userData.k = pt.k;
     r[pt.bone].add(m); c.meshes.push(m);
   }
   setHeld(c, c.held);
@@ -3450,6 +3703,169 @@ function setHeldItem(c, model, color) {
 }
 function setHeldScale(c, s) { c.heldScale = s; if (c.heldMeshes) for (const m of c.heldMeshes) { m.scale.setScalar(Math.max(0.05, s)); } }
 
+/* ---- 33_avatar.js ---- */
+/* ================= realistic avatars: rigged Mixamo characters driven by an animation pack and by the game's own poses ================= */
+// Models: Mixamo characters shipped with the three.js examples (Michelle, Vanguard, X Bot). Animations: a model-neutral pack
+// (idle, walk, run, nod, head shake, samba) extracted from the Mixamo clips; every other activity reuses the game's pose system.
+const AVATARS = [
+  { id: 'michelle', name: 'Michelle', blurb: 'Casual traveller', file: 'models/Michelle.glb', height: 1.68, hat: 1.18, hatY: 0.02 },
+  { id: 'vanguard', name: 'Vanguard', blurb: 'Armored explorer', file: 'models/Soldier.glb', height: 1.84, hat: 1.12, hatY: 0.0 },
+  { id: 'xbot', name: 'X Bot', blurb: 'Android, two colors you choose', file: 'models/Xbot.glb', height: 1.8, hat: 1.0, hatY: 0.0, tint: true },
+];
+const AV_BONES = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase'];
+const AV = { assets: {}, packP: null, pack: null };
+const AV_ACC = new Set(['shades', 'sunhat', 'capTop', 'capBand', 'capVisor', 'capBadge', 'phones']);
+function avatarDef(id) { return AVATARS.find(a => a.id === id) || null; }
+function avatarsSupported() { return typeof T.GLTFLoader === 'function' && T.SkeletonUtils && typeof fetch === 'function'; }
+function avAsset(id) {
+  const d = avatarDef(id); if (!d || !avatarsSupported()) return Promise.reject(new Error('avatar unavailable'));
+  return AV.assets[id] || (AV.assets[id] = new Promise((res, rej) => new T.GLTFLoader().load(d.file, res, undefined, rej)).catch(e => { delete AV.assets[id]; throw e; }));
+}
+function avPack() {
+  return AV.packP || (AV.packP = fetch('models/anims.json').then(r => { if (!r.ok) throw new Error('pack ' + r.status); return r.json(); }).then(j => {
+    for (const k in j.clips) { const c = j.clips[k]; if (c.q) { c.q = Float32Array.from(c.q); c.h = Float32Array.from(c.h); } }
+    AV.pack = j; return j;
+  }).catch(e => { AV.packP = null; throw e; }));
+}
+function avReady(id) { return Promise.all([avAsset(id), avPack()]).then(([g]) => g); }
+
+const _aq = new T.Quaternion(), _aq2 = new T.Quaternion(), _av = new T.Vector3(), _am = new T.Matrix4();
+class RealBody {
+  constructor(def, gltf) {
+    this.def = def; this.holder = new T.Group(); this.inner = new T.Group(); this.holder.add(this.inner);
+    const sc = T.SkeletonUtils.clone(gltf.scene); this.inner.add(sc); this.model = sc;
+    this.mats = [];
+    sc.traverse(o => {
+      if (!o.isMesh) return;
+      o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
+      o.material = [].concat(o.material).map(m => { const c = m.clone(); c.envMapIntensity = 0.9; this.mats.push(c); return c; });
+      if (o.material.length === 1) o.material = o.material[0];
+    });
+    const find = n => { let f = null; sc.traverse(o => { if (!f && o.isBone && o.name.replace(/^mixamorig:?/, '') === n) f = o; }); return f; };
+    const B = this.bones = AV_BONES.map(find);
+    const wp = o => o.getWorldPosition(new T.Vector3());
+    this.holder.updateMatrixWorld(true);
+    // face +z like the game's characters, and scale to the avatar's height
+    const fwd = wp(B[17]).sub(wp(B[16])).add(wp(B[21]).sub(wp(B[20]))); fwd.y = 0; fwd.normalize();
+    this.inner.quaternion.setFromUnitVectors(fwd, V3(0, 0, 1)); this.holder.updateMatrixWorld(true);
+    let top = null; sc.traverse(o => { if (o.isBone && /HeadTop_End$/.test(o.name)) top = o; });
+    const topY = top ? wp(top).y : wp(B[5]).y + 0.2;
+    this.inner.scale.setScalar(def.height / Math.max(0.01, topY)); this.holder.updateMatrixWorld(true);
+    // bind pose in model space (holder space)
+    this.bindQ = B.map(b => b.getWorldQuaternion(new T.Quaternion()));
+    this.parentIdx = B.map(b => B.indexOf(b.parent));
+    this.parentQ = B.map(b => b.parent.getWorldQuaternion(new T.Quaternion()));
+    this.hipsParentInv = new T.Matrix4().copy(B[0].parent.matrixWorld).invert();
+    const hb = wp(B[0]); this.hipH = hb.y; this.hipBind = hb;
+    // alignment from the bind T-pose to the game's rest pose (arms hanging, legs straight down)
+    const down = V3(0, -1, 0), q = i => new T.Quaternion().setFromUnitVectors(wp(B[i + 1]).sub(wp(B[i])).normalize(), down);
+    const qL = q(7), qR = q(11), qLL = q(14), qRL = q(18);
+    this.qa = B.map(() => new T.Quaternion());
+    for (const i of [7, 8, 9]) this.qa[i].copy(qL); for (const i of [11, 12, 13]) this.qa[i].copy(qR);
+    for (const i of [14, 15, 16, 17]) this.qa[i].copy(qLL); for (const i of [18, 19, 20, 21]) this.qa[i].copy(qRL);
+    // sockets for hats/glasses (head), the lei (chest) and held items (right hand), expressed in the game's bone spaces
+    const headTop = top ? wp(top).sub(wp(B[5])) : V3(0, 0.2, 0);
+    const hs = B[5].getWorldScale(new T.Vector3()).x, cs = B[3].getWorldScale(new T.Vector3()).x, rs = B[13].getWorldScale(new T.Vector3()).x;
+    this.head = this.socket(B[5], this.bindQ[5], hs, 1.12 * headTop.length() / 0.276 * def.hat, V3(0, def.hatY || 0, headTop.z * 0.5));
+    this.chest = this.socket(B[3], this.bindQ[3], cs, def.height / 1.75, V3(0, -0.12 * def.height / 1.75, 0));
+    this.hand = this.socket(B[13], this.bindQ[13].clone().premultiply(this.qa[13]), rs, def.height / 1.75, V3(0, 0, 0));
+    this.D = B.map(() => new T.Quaternion()); this.Dt = B.map(() => new T.Quaternion()); this.W = B.map(() => new T.Quaternion());
+    this.hp = this.hipBind.clone(); this.hpt = new T.Vector3(); this.t = Math.random() * 10; this.first = true; this.clip = '';
+    this.tint(null, null);
+  }
+  socket(bone, modelQ, boneScale, scale, offset) {
+    const s = new T.Group();
+    s.quaternion.copy(modelQ).invert();
+    s.position.copy(offset).applyQuaternion(_aq.copy(modelQ).invert()).divideScalar(boneScale);
+    s.scale.setScalar(scale / boneScale);
+    bone.add(s); return s;
+  }
+  tint(a, b) {
+    if (!this.def.tint) return;
+    for (const m of this.mats) { if (/Joints/i.test(m.name)) m.color.copy(lin(b || '#2a3340')); else m.color.copy(lin(a || '#d8dde3')); m.metalness = 0.35; m.roughness = 0.35; }
+  }
+  // pose from the game's procedural rig (any activity)
+  fromRig(c) {
+    const r = c.rig, D = this.Dt; r.root.updateMatrixWorld(true);
+    const rootInv = _aq2.copy(r.root.getWorldQuaternion(_aq2)).invert();
+    const R = (name, out) => out.copy(rootInv).multiply(r[name].getWorldQuaternion(_aq));
+    R('hips', D[0]); R('chest', D[3]); D[1].copy(D[0]).slerp(D[3], 0.34); D[2].copy(D[0]).slerp(D[3], 0.67);
+    R('neck', D[4]); R('head', D[5]); D[6].copy(D[3]); D[10].copy(D[3]);
+    R('shL', D[7]); R('elL', D[8]); R('wrL', D[9]); R('shR', D[11]); R('elR', D[12]); R('wrR', D[13]);
+    R('hpL', D[14]); R('knL', D[15]); R('anL', D[16]); D[17].copy(D[16]); R('hpR', D[18]); R('knR', D[19]); R('anR', D[20]); D[21].copy(D[20]);
+    for (let i = 7; i < 22; i++) if (i !== 10) D[i].multiply(this.qa[i]);
+    const p = r.root.worldToLocal(r.hips.getWorldPosition(_av));
+    this.hpt.copy(p).multiplyScalar(this.hipH / Math.max(0.3, r.hipH));
+  }
+  // pose from the animation pack
+  fromClip(name, t) {
+    const c = AV.pack && AV.pack.clips[name]; if (!c || !c.q) return false;
+    const fps = AV.pack.fps, n = c.n, f = ((t % c.dur) + c.dur) % c.dur * fps, i0 = Math.floor(f) % n, i1 = (i0 + 1) % n, a = f - Math.floor(f);
+    const D = this.Dt, q = c.q, nb = AV_BONES.length;
+    for (let k = 0; k < nb; k++) {
+      const o0 = (i0 * nb + k) * 4, o1 = (i1 * nb + k) * 4;
+      D[k].set(q[o0], q[o0 + 1], q[o0 + 2], q[o0 + 3]); _aq.set(q[o1], q[o1 + 1], q[o1 + 2], q[o1 + 3]); D[k].slerp(_aq, a);
+    }
+    const h = c.h, j0 = i0 * 3, j1 = i1 * 3;
+    this.hpt.set(lerp(h[j0], h[j1], a) * this.hipH * 0.3 + this.hipBind.x, lerp(h[j0 + 1], h[j1 + 1], a) * this.hipH, lerp(h[j0 + 2], h[j1 + 2], a) * this.hipH * 0.3 + this.hipBind.z);
+    return true;
+  }
+  update(dt, c, root) {
+    this.holder.position.copy(root.position); this.holder.quaternion.copy(root.quaternion);
+    const a = c.anim, sp = c.speed || 0;
+    let clip = '', rate = 1;
+    if (a === 'idle' && !c.held && !c.idleStyle) clip = 'idle';
+    else if (a === 'walk') { if (sp > 3.4) { clip = 'run'; rate = sp / 4.6; } else { clip = 'walk'; rate = Math.max(0.6, sp / 1.45); } }
+    else if (a === 'dance') clip = 'samba';
+    if (clip !== this.clip) { this.clip = clip; this.t = clip === 'walk' || clip === 'run' ? (c.phase || 0) / TAU * (AV.pack && AV.pack.clips[clip] ? AV.pack.clips[clip].dur : 1) : this.t; }
+    this.t += dt * rate;
+    if (!clip || !this.fromClip(clip, this.t)) this.fromRig(c);
+    const k = this.first ? 1 : 1 - Math.exp(-(clip ? 14 : 22) * dt); this.first = false;
+    const B = this.bones, W = this.W;
+    for (let i = 0; i < B.length; i++) {
+      const b = B[i]; if (!b) continue;
+      this.D[i].slerp(this.Dt[i], k);
+      W[i].copy(this.D[i]).multiply(this.bindQ[i]);
+      const pi = this.parentIdx[i];
+      b.quaternion.copy(_aq.copy(pi >= 0 ? W[pi] : this.parentQ[i]).invert().multiply(W[i]));
+    }
+    this.hp.lerp(this.hpt, k);
+    if (B[0]) B[0].position.copy(this.hp).applyMatrix4(this.hipsParentInv);
+  }
+  // move the classic character's hats, glasses and held items onto this body; hide the rest of the classic meshes
+  adopt(c) {
+    if (c.meshes) for (const m of c.meshes) {
+      const k = m.userData.k;
+      if (AV_ACC.has(k)) { if (m.parent !== this.head) this.head.add(m); m.visible = true; }
+      else if (k === 'lei') { if (m.parent !== this.chest) this.chest.add(m); m.visible = true; }
+      else m.visible = false;
+    }
+    if (c.heldMeshes) for (const m of c.heldMeshes) if (m.parent !== this.hand) this.hand.add(m);
+  }
+  dispose() { if (this.holder.parent) this.holder.parent.remove(this.holder); }
+}
+// give a Char a realistic body (or take it away). Loads lazily; the classic body shows until the model arrives.
+function setRealBody(c, id, parent, tintA, tintB) {
+  if (!c) return;
+  const want = id && id !== 'classic' && avatarDef(id) ? id : '';
+  if (c.realId === want && (c.real || c.realLoading === want)) { if (c.real) c.real.tint(tintA, tintB); return; }
+  if (c.real) { const r = c.real; c.real = null; r.dispose(); if (c.meshes) { buildCharMesh(c); } }
+  c.realId = want; c.realLoading = '';
+  if (!want) { if (c.meshes) for (const m of c.meshes) m.visible = true; return; }
+  c.realLoading = want;
+  avReady(want).then(g => {
+    if (c.realId !== want || c.real) return;
+    const rb = new RealBody(avatarDef(want), g); rb.tint(tintA, tintB);
+    c.real = rb; c.realLoading = '';
+    (parent || G.scene).add(rb.holder);
+  }).catch(e => { console.warn('avatar', e); if (c.realId === want) { c.realId = ''; c.realLoading = ''; if (c.meshes) for (const m of c.meshes) m.visible = true; } });
+}
+function updateRealBody(c, dt) {
+  const r = c && c.real; if (!r) return;
+  r.update(dt, c, c.rig.root); r.adopt(c);
+  r.holder.visible = c.rig.root.visible !== false && !c.hidden;
+}
+
 /* ---- 40_player.js ---- */
 /* ================= player controller, input, camera ================= */
 const Input = { mx: 0, my: 0, run: false, jump: false, keys: new Set(), camDX: 0, camDY: 0, zoom: 0, act: false, joyId: null, joyOrigin: null, camIds: new Map(), pinch: null };
@@ -3527,11 +3943,13 @@ function readKeys() {
   return { x: Input.joyId !== null ? Input.mx : x, y: Input.joyId !== null ? Input.my : y, run: k.has('ShiftLeft') || k.has('ShiftRight') || (Input.joyId !== null && Math.hypot(Input.mx, Input.my) > 0.88) };
 }
 
+function avTints(app) { return [OUTFIT[app.topColor] || '#d8dde3', OUTFIT[app.bottomColor] || '#2a3340']; }
 function initPlayer(app) {
   const c = new Char(app, { seed: 1 }); c.look = 0.3;
   buildCharMesh(c);
-  if (Player.char) G.scene.remove(Player.char.rig.root);
+  if (Player.char) { G.scene.remove(Player.char.rig.root); if (Player.char.real) Player.char.real.dispose(); Player.char.realId = 'gone'; }
   Player.char = c; G.scene.add(c.rig.root);
+  setRealBody(c, app.av, G.scene, ...avTints(app));
 }
 function placePlayer(x, y, z, yaw) {
   Player.pos.set(x, y, z); Player.velY = 0; Player.yaw = yaw; Player.mode = 'walk'; Player.water = null; Player.onGround = true;
@@ -3612,6 +4030,7 @@ function syncPlayerRig(dt) {
   r.position.set(P.pos.x + ox, P.pos.y + oy, P.pos.z + oz);
   r.rotation.set(0, P.yaw, 0);
   if (P.override) P.override(r);
+  if (c.real) updateRealBody(c, dt);
 }
 function overboard() {
   const P = Player;
@@ -5876,13 +6295,14 @@ function readRemote(p) {
     else if (t > R.sayT && x && (!publicChatOnly() || QUICK_SAYS.includes(x))) { R.sayT = t; R.pendingSay = x; }
   }
   R.cabin = typeof pr.c === 'string' ? pr.c.slice(0, 900) : '';
+  R.av = typeof pr.av === 'string' && avatarDef(pr.av) ? pr.av : '';
   R.triv = pr.tv && typeof pr.tv === 'object' ? { s: num(pr.tv.s, 0, 99999) | 0, t: num(pr.tv.t, 0, 1e15) } : null;
   if (!R.seen) { R.pos.copy(R.tpos); R.yaw = R.tyaw; }
   R.seen = performance.now();
 }
 function dropRemote(peer) {
   const R = Net.remotes.get(peer); if (!R) return;
-  if (R.ch) G.scene.remove(R.ch.rig.root); if (R.tag) R.tag.remove();
+  if (R.ch) { G.scene.remove(R.ch.rig.root); if (R.ch.real) R.ch.real.dispose(); R.ch.realId = 'gone'; } if (R.tag) R.tag.remove();
   Net.remotes.delete(peer);
 }
 function myLoc() {
@@ -5918,7 +6338,7 @@ function netSend(dt) {
     p: [+r.position.x.toFixed(2), +r.position.y.toFixed(2), +r.position.z.toFixed(2)], r: +wrapAngle(r.rotation.y).toFixed(2),
     m: NET_ANIMS.has(c.anim) ? c.anim : 'idle', s: +(c.speed || 0).toFixed(1), d: c.danceStyle | 0, st: +(c.seat || 0.8).toFixed(2),
     h: NET_HELD.has(c.held) ? c.held : null, hc: Food.held && FOOD[Food.held] && FOOD[Food.held].color ? FOOD[Food.held].color : null,
-    say: Net.say, c: Net.cabin, tv: Trivia.active || G.profile.triviaBest ? { s: Trivia.active ? Trivia.score : (G.profile.triviaBest || 0), t: Date.now() } : null
+    say: Net.say, c: Net.cabin, av: A.av && avatarDef(A.av) ? A.av : undefined, tv: Trivia.active || G.profile.triviaBest ? { s: Trivia.active ? Trivia.score : (G.profile.triviaBest || 0), t: Date.now() } : null
   };
   const js = JSON.stringify(pres); if (js === Net.last) return; Net.last = js;
   Net.room.presence(pres).catch(() => { });
@@ -5927,12 +6347,13 @@ function updateRemotes(dt) {
   if (!Net.room) return;
   const loc = myLoc(), cam = G.camera.position;
   const vis = [];
-  for (const R of Net.remotes.values()) { R.here = R.loc === loc && R.tpos.distanceTo(cam) < 160; if (R.here) vis.push(R); else if (R.ch) { R.ch.rig.root.visible = false; if (R.tag) R.tag.style.display = 'none'; } }
+  for (const R of Net.remotes.values()) { R.here = R.loc === loc && R.tpos.distanceTo(cam) < 160; if (R.here) vis.push(R); else if (R.ch) { R.ch.rig.root.visible = false; if (R.ch.real) R.ch.real.holder.visible = false; if (R.tag) R.tag.style.display = 'none'; } }
   vis.sort((a, b) => a.tpos.distanceToSquared(cam) - b.tpos.distanceToSquared(cam));
   vis.forEach((R, i) => {
-    if (i >= 20) { if (R.ch) R.ch.rig.root.visible = false; if (R.tag) R.tag.style.display = 'none'; return; }
+    if (i >= 20) { if (R.ch) { R.ch.rig.root.visible = false; if (R.ch.real) R.ch.real.holder.visible = false; } if (R.tag) R.tag.style.display = 'none'; return; }
     const key = JSON.stringify(R.app);
-    if (!R.ch || R.appKey !== key) { if (R.ch) G.scene.remove(R.ch.rig.root); R.ch = new Char(R.app, { seed: Math.random() * 100 }); R.ch.look = 0.4; buildCharMesh(R.ch); G.scene.add(R.ch.rig.root); R.appKey = key; R.pos.copy(R.tpos); R.yaw = R.tyaw; R.heldKey = ''; }
+    if (!R.ch || R.appKey !== key) { if (R.ch) { G.scene.remove(R.ch.rig.root); if (R.ch.real) R.ch.real.dispose(); R.ch.realId = 'gone'; } R.ch = new Char(R.app, { seed: Math.random() * 100 }); R.ch.look = 0.4; buildCharMesh(R.ch); G.scene.add(R.ch.rig.root); R.appKey = key; R.pos.copy(R.tpos); R.yaw = R.tyaw; R.heldKey = ''; }
+    if ((R.ch.realId || '') !== (R.av || '')) setRealBody(R.ch, R.av, G.scene, ...avTints(R.app));
     const c = R.ch; c.rig.root.visible = true;
     if (R.pos.distanceToSquared(R.tpos) > 64) R.pos.copy(R.tpos); else R.pos.lerp(R.tpos, 1 - Math.exp(-10 * dt));
     R.yaw = dampAngle(R.yaw, R.tyaw, 10, dt);
@@ -5940,6 +6361,7 @@ function updateRemotes(dt) {
     const hk = (R.held || '') + (R.heldCol || ''); if (hk !== R.heldKey) { R.heldKey = hk; setHeld(c, R.held, R.heldCol); c.noSip = !!R.held; }
     c.update(dt, G.time);
     c.rig.root.position.copy(R.pos); c.rig.root.rotation.set(0, R.yaw, 0);
+    if (c.real) updateRealBody(c, dt);
     if (!R.tag) { R.tag = document.createElement('div'); R.tag.className = 'ntag'; $('nameTags').appendChild(R.tag); }
     if (R.tag.dataset.n !== R.name) { R.tag.dataset.n = R.name; R.tag.textContent = R.name + (R.guest ? ' · guest' : ''); }
     const p = _v1.copy(R.pos); p.y += 2.12; p.project(G.camera);
@@ -6214,6 +6636,7 @@ function settingsSheet() {
   const seg = (id, opts, cur) => `<div class="seg" id="${id}">${opts.map(([v, l]) => `<button data-v="${v}" aria-pressed="${String(v) === String(cur)}">${l}</button>`).join('')}</div>`;
   sheet('Settings', G.profile.name + ' · Cabin ' + G.profile.cabin, `
     <div class="row"><label>Graphics<small>Ultra adds sharper shadows and more passengers</small></label>${seg('sQ', [['battery', 'Battery'], ['high', 'High'], ['ultra', 'Ultra']], q)}</div>
+    <div class="row"><label>Look<small>Next-Gen (High and Ultra) adds contact shadows, sun glare, a film grade and photo-mode depth of field</small></label>${seg('sNG', [[1, 'Next-Gen'], [0, 'Classic']], S.ng === false ? 0 : 1)}</div>
     <div class="row"><label for="sMusic">Music</label><input type="range" id="sMusic" min="0" max="1" step="0.05" value="${S.music}"></div>
     <div class="row"><label>Ship radio<small>Your songs at the party venues</small></label>${seg('sRadio', [[1, 'On'], [0, 'Off']], S.radio === false ? 0 : 1)}</div>
     <div class="row"><label for="sSfx">Sound effects</label><input type="range" id="sSfx" min="0" max="1" step="0.05" value="${S.sfx}"></div>
@@ -6223,8 +6646,10 @@ function settingsSheet() {
     <button class="menu-item" id="sOutfit">Change outfit<small>Back to the dressing room</small></button>
     <button class="menu-item" id="sOut">Sign out<small>Return to the boarding pass</small></button>
     <p class="kbd">${IS_TOUCH ? 'Drag the left side to walk, drag the right side to look, pinch to zoom.' : 'WASD to walk · Shift to run · Space to jump · E to interact · F to eat or drink · Q for emotes · T to chat · M map · P program · C camera · drag to look · scroll to zoom'}</p>
-    <p class="kbd">TILEO Cruise Lines and the Tileo Infinity are fictional. Your passenger profile is stored only in this browser.</p>`, body => {
+    <p class="kbd">TILEO Cruise Lines and the Tileo Infinity are fictional. Your passenger profile is stored only in this browser.</p>
+    <p class="kbd">Realistic avatars and their animations: Mixamo characters (Michelle, Vanguard, X Bot) from the three.js examples.</p>`, body => {
     body.querySelectorAll('#sQ button').forEach(b => b.onclick = () => { S.quality = b.dataset.v; Store.set('settings', S); applyQuality(b.dataset.v); settingsSheet(); });
+    body.querySelectorAll('#sNG button').forEach(b => b.onclick = () => { S.ng = b.dataset.v === '1'; Store.set('settings', S); setupPost(); onResize(); settingsSheet(); });
     body.querySelectorAll('#sClock button').forEach(b => b.onclick = () => { Clock.rate = +b.dataset.v; S.clock = Clock.rate; Store.set('settings', S); settingsSheet(); });
     $('sMusic').oninput = e => { S.music = +e.target.value; Audio.musicVol = S.music; Store.set('settings', S); };
     body.querySelectorAll('#sRadio button').forEach(b => b.onclick = () => { S.radio = b.dataset.v === '1'; Store.set('settings', S); radioEnable(S.radio); settingsSheet(); });
@@ -6240,7 +6665,7 @@ function showBoarding() {
   G.state = 'boarding'; $('hud').hidden = true; $('creator').hidden = true; $('boarding').hidden = false; $('photoUI').hidden = true;
   if (Player.activity) endActivity();
   closePanel();
-  if (Player.char) Player.char.rig.root.visible = false;
+  if (Player.char) { Player.char.rig.root.visible = false; if (Player.char.real) Player.char.real.holder.visible = false; }
   G.shadowExtent = 230;
   const pr = Store.get('profile', null);
   if (pr && pr.name) {
@@ -6293,15 +6718,17 @@ function buildStudio() {
   G.studioCam.position.set(0, 1.15, 5.6); G.studioCam.lookAt(0, 0.92, 0);
   G.creatorYaw = 0.35;
 }
-const CR_TABS = ['Body', 'Skin', 'Hair', 'Outfit', 'Extras'];
-let crTab = 'Body';
+const CR_TABS = ['Avatar', 'Body', 'Skin', 'Hair', 'Outfit', 'Extras'];
+let crTab = 'Avatar';
 function enterCreator(fromGame) {
   G.state = 'creator'; G.creatorFromGame = fromGame;
   $('boarding').hidden = true; $('hud').hidden = true; $('creator').hidden = false;
   if (!G.studio) buildStudio();
   G.studio.environment = Env.envRT ? Env.envRT.texture : null;
-  if (G.crChar) G.studio.remove(G.crChar.rig.root);
+  if (G.crChar) { G.studio.remove(G.crChar.rig.root); if (G.crChar.real) G.crChar.real.dispose(); G.crChar.realId = 'gone'; }
+  if (Player.char && Player.char.real) Player.char.real.holder.visible = false;
   G.crChar = new Char(G.profile.app, { seed: 2 }); G.crChar.look = 0.4; buildCharMesh(G.crChar); G.studio.add(G.crChar.rig.root);
+  setRealBody(G.crChar, G.profile.app.av, G.studio, ...avTints(G.profile.app));
   $('boardBtn').textContent = fromGame ? 'Back to the ship' : 'Board the ship';
   renderCreator(); layoutCreator();
 }
@@ -6326,6 +6753,14 @@ function renderCreator() {
   const chips = (key, list, disabled) => `<div class="chips">${list.map((n, i) => `<button class="chip" data-k="${key}" data-v="${i}" aria-pressed="${app[key] === i}" ${disabled ? 'disabled style="opacity:.4"' : ''}>${n}</button>`).join('')}</div>`;
   const sw = (key, cols) => `<div class="swatches">${cols.map((c, i) => `<button class="sw" data-k="${key}" data-v="${i}" style="background:${c}" aria-pressed="${app[key] === i}" aria-label="Color ${i + 1}"></button>`).join('')}</div>`;
   let html = '';
+  const real = app.av && avatarDef(app.av);
+  if (crTab === 'Avatar') {
+    const card = (id, name, blurb) => `<button class="av-card" data-av="${id}" aria-pressed="${(app.av || 'classic') === id}"><b>${esc(name)}</b><small>${esc(blurb)}</small></button>`;
+    html = `<div class="opt-group"><h4>Style</h4><div class="av-grid">${card('classic', 'Classic', 'Fully customizable')}${AVATARS.map(a => card(a.id, a.name, a.blurb)).join('')}</div></div>`
+      + (real ? `<p class="kbd">${G.crChar && G.crChar.realLoading ? 'Loading the 3D model…' : 'Realistic avatars keep their own look. Hats, sunglasses, headphones and the lei from Extras still work.'}</p>` : `<p class="kbd">Realistic avatars are rigged 3D characters. Your classic look is saved if you switch back.</p>`)
+      + (real && real.tint ? `<div class="opt-group"><h4>Shell color</h4>${sw('topColor', OUTFIT)}</div><div class="opt-group"><h4>Joint color</h4>${sw('bottomColor', OUTFIT)}</div>` : '');
+  }
+  const classicNote = real && crTab !== 'Avatar' && crTab !== 'Extras' ? '<p class="kbd">These options style the classic avatar.</p>' : '';
   if (crTab === 'Body') html = `<div class="name-row"><input id="crName" maxlength="18" value="${esc(G.profile.name)}" aria-label="Passenger name"></div>
     <div class="opt-group"><h4>Build</h4>${chips('body', BODIES)}</div>
     <div class="opt-group"><h4>Height</h4><div class="chips">${[['0.95', 'Shorter'], ['1', 'Average'], ['1.05', 'Taller']].map(([v, l]) => `<button class="chip" data-k="height" data-v="${v}" aria-pressed="${Math.abs(app.height - +v) < 0.026}">${l}</button>`).join('')}</div></div>`;
@@ -6334,7 +6769,11 @@ function renderCreator() {
   if (crTab === 'Outfit') html = `<div class="opt-group"><h4>Top</h4>${chips('top', TOPS)}</div><div class="opt-group"><h4>Top color</h4>${sw('topColor', OUTFIT)}</div>
     <div class="opt-group"><h4>Bottoms</h4>${chips('bottom', BOTTOMS, app.top === 4)}</div><div class="opt-group"><h4>Bottoms color</h4>${sw('bottomColor', OUTFIT)}</div><div class="opt-group"><h4>Shoes</h4>${sw('shoes', SHOE_COLORS)}</div>`;
   if (crTab === 'Extras') html = `<div class="opt-group"><h4>Accessory</h4>${chips('acc', ACCS)}</div><div class="opt-group"><h4>Accessory color</h4>${sw('accColor', ACC_COLORS)}</div>`;
-  $('crBody').innerHTML = html;
+  $('crBody').innerHTML = classicNote + html;
+  $('crBody').querySelectorAll('[data-av]').forEach(b => b.onclick = () => {
+    app.av = b.dataset.av === 'classic' ? undefined : b.dataset.av; sfx('tick'); refreshCreatorChar(); renderCreator();
+    if (app.av) { const c = G.crChar; const t = setInterval(() => { if (G.crChar !== c || !c.realLoading) { clearInterval(t); if (G.state === 'creator' && crTab === 'Avatar') renderCreator(); } }, 300); }
+  });
   $('crBody').querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
     const k = b.dataset.k; app[k] = k === 'height' ? +b.dataset.v : +b.dataset.v;
     if (k === 'top' && app.top === 4) app.bottom = 3;
@@ -6345,6 +6784,9 @@ function renderCreator() {
 function refreshCreatorChar() {
   const old = G.crChar; const c = new Char(G.profile.app, { seed: 2 }); c.p = old.p; c.anim = 'idle'; buildCharMesh(c);
   G.studio.remove(old.rig.root); G.studio.add(c.rig.root); G.crChar = c;
+  if (old.real && old.realId === G.profile.app.av) { c.real = old.real; c.realId = old.realId; old.real = null; c.real.tint(...avTints(G.profile.app)); }
+  else { if (old.real) old.real.dispose(); setRealBody(c, G.profile.app.av, G.studio, ...avTints(G.profile.app)); }
+  old.realId = 'gone';
   c.setAnim('wave'); setTimeout(() => { if (G.crChar === c) c.setAnim('idle'); }, 1300);
 }
 function wireCreator() {
@@ -6429,7 +6871,7 @@ function stepFrame(dt, noRender) {
     } else if (G.state === 'creator') {
       G.creatorYaw -= Input.camDX * 0.012; Input.camDX = 0; Input.camDY = 0;
       G.creatorYaw += dt * 0.12;
-      const c = G.crChar; c.rig.root.rotation.y = G.creatorYaw; c.update(dt, G.time);
+      const c = G.crChar; c.rig.root.rotation.y = G.creatorYaw; c.update(dt, G.time); if (c.real) updateRealBody(c, dt);
       if (!noRender) renderFrame(G.studio, G.studioCam);
     } else {
       updateEvents(dt);
@@ -6449,6 +6891,7 @@ function stepFrame(dt, noRender) {
   if (perfT > 3) {
     const avg = perfAcc / perfN; perfAcc = 0; perfN = 0; perfT = 0;
     if (avg > 0.042 && (G.prScale || 1) > 0.6 && G.state !== 'loading') { G.prScale = (G.prScale || 1) - 0.15; G.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, G.quality.pr * G.prScale)); onResize(); }
+    else if (avg > 0.045 && G.state === 'play' && typeof nextGenSlow === 'function') nextGenSlow();
   }
 }
 
@@ -6460,7 +6903,7 @@ async function boot(restore) {
     $('loadErr').hidden = false; $('loadErr').textContent = 'The 3D engine could not load. Check your connection and reload the page.'; return;
   }
   try {
-    G.settings = Object.assign({ quality: IS_TOUCH ? 'high' : 'ultra', music: 0.7, sfx: 0.9, clock: 1 }, Store.get('settings', {}));
+    G.settings = Object.assign({ quality: IS_TOUCH ? 'high' : 'ultra', music: 0.7, sfx: 0.9, clock: 1, ng: true }, Store.get('settings', {}));
     Audio.musicVol = G.settings.music; Audio.sfxVol = G.settings.sfx; Clock.rate = G.settings.clock || 1; Radio.enabled = G.settings.radio !== false;
     Clock.min = 17 * 60 + 45;
     G.photos = Store.get('photos', []) || [];
@@ -6497,7 +6940,7 @@ async function boot(restore) {
   }
 }
 window.TILEO_DEBUG = { G, World, Env, Player, Clock, NPCS, Audio, Cam, T, Input, setClock, travelTo, applyQuality, actSlide, actZip, actHoops, actDance, enterPhoto, takePhoto, openSheet, startPlay, stamp, onActionPressed, scanHotspots,
-  goAshore, returnToShip, enterSuite, startDecorate, openSlots, openBlackjack, openRoulette, startTrivia, answerTrivia, actSurf, actGolf, consume, giveFood, openMenu, Net, Radio, Suite, Food, Trivia, GOLF, PORTS, closePanel, endActivity, netSay, readRemote, myLayout, showSuite,
+  AVATARS, setRealBody, initPlayer, enterCreator, setupPost, nextGenOn, NG, saveProfile, goAshore, returnToShip, enterSuite, startDecorate, openSlots, openBlackjack, openRoulette, startTrivia, answerTrivia, actSurf, actGolf, consume, giveFood, openMenu, Net, Radio, Suite, Food, Trivia, GOLF, PORTS, closePanel, endActivity, netSay, readRemote, myLayout, showSuite,
   sim(n, dt = 1 / 30) { for (let i = 0; i < n; i++) stepFrame(dt, true); return Player.pos.toArray().map(v => +v.toFixed(2)); },
   render() { stepFrame(1 / 60); } };
 requestAnimationFrame(loop);

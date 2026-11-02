@@ -293,6 +293,10 @@ input[type=range]{accent-color:var(--coral);width:140px}
 .pdot{width:10px;height:10px;border-radius:50%;background:var(--mist)}.pdot.here,.person.me .pdot{background:var(--lagoon)}
 .person .btn{padding:8px 12px;font-size:13px}
 .chatbox{display:flex;gap:8px;margin-top:6px}
+.av-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.av-card{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid var(--line);text-align:left}
+.av-card b{font-size:15px}.av-card small{font-size:12px;color:var(--mist)}
+.av-card[aria-pressed="true"]{background:var(--foam);color:var(--ink);border-color:var(--foam)}.av-card[aria-pressed="true"] small{color:#3c5068}
 .shipbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px;border-radius:14px;background:rgba(47,211,198,.08);border:1px solid rgba(47,211,198,.35)}
 .shipbar>div{flex:1 1 160px;min-width:0}.shipbar b{display:block;font-size:14.5px}.shipbar small{display:block;color:var(--mist);font-size:12px}.shipbar .btn{padding:9px 14px;font-size:13px}
 .invite-url{box-sizing:border-box;width:100%;background:rgba(255,255,255,.08);border:1px solid var(--line);border-radius:12px;padding:10px 12px;color:var(--foam);font-family:var(--f-mono);font-size:12px;user-select:text;-webkit-user-select:text}
@@ -495,6 +499,12 @@ input[type=range]{accent-color:var(--coral);width:140px}
 <script src="vendor/RenderPass.js"></script>
 <script src="vendor/ShaderPass.js"></script>
 <script src="vendor/UnrealBloomPass.js"></script>
+<script src="vendor/SMAAShader.js"></script>
+<script src="vendor/SMAAPass.js"></script>
+<script src="vendor/BokehShader.js"></script>
+<script src="vendor/BokehPass.js"></script>
+<script src="vendor/GLTFLoader.js"></script>
+<script src="vendor/SkeletonUtils.js"></script>
 <script src="vendor/p2p.js"></script>
 <script src="config.js"></script>
 <script src="js/tileo.js"></script>
