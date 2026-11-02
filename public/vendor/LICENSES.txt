@@ -72,5 +72,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-Avatar models (models/Michelle.glb, Soldier.glb, Xbot.glb) and the animations in models/anims.json come from Mixamo (Adobe),
-as distributed with the three.js examples (examples/models/gltf). Embedded animations were removed; the meshes are unchanged.
+Realistic people (people/*.glb and their textures) are adapted from the Microsoft Rocketbox Avatar Library - MIT License
+Copyright (c) Microsoft Corporation. https://github.com/microsoft/Microsoft-Rocketbox
+Textures were resized and some were recolored (outfits, skin tone, beards); meshes were converted to glTF.
+
+The walk, run, idle and dance motion in people/anims.json was extracted from Mixamo (Adobe) clips distributed with the three.js examples.

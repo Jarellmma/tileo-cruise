@@ -635,6 +635,7 @@ class CineAOPass extends T.Pass {
   constructor(scene, camera, w, h) {
     super(); this.scene = scene; this.camera = camera; this.needsSwap = true;
     this.depthMat = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, blending: T.NoBlending });
+    this.depthSkin = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, blending: T.NoBlending, skinning: true });
     this.params = { radius: 0.75, intensity: 1.5, bias: 0.02, power: 1.4, strength: 0.75 };
     const vs = 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }';
     this.aoMat = new T.ShaderMaterial({
@@ -703,9 +704,22 @@ class CineAOPass extends T.Pass {
     }
     const vis = this.skip.map(o => o.visible); this.skip.forEach(o => o.visible = false);
     const ov = sc.overrideMaterial, bg = sc.background, cc = renderer.getClearColor(new T.Color()), ca = renderer.getClearAlpha();
+    // skinned people are drawn separately with a skinning depth material (an override material would draw them in bind pose)
+    const bodies = typeof AV === 'object' && AV.bodies ? [...AV.bodies].filter(b => b.holder.parent === sc && b.holder.visible) : [];
+    bodies.forEach(b => b.holder.visible = false);
     sc.overrideMaterial = this.depthMat; sc.background = null;
     renderer.setRenderTarget(this.depthRT); renderer.setClearColor(0xffffff, 1); renderer.clear(); renderer.render(sc, cam);
     sc.overrideMaterial = ov; sc.background = bg; renderer.setClearColor(cc, ca);
+    if (bodies.length) {
+      const ac = renderer.autoClear; renderer.autoClear = false;
+      for (const b of bodies) {
+        b.holder.visible = true; const sw = [];
+        b.holder.traverse(o => { if (!o.isMesh) return; const m = o.material, t = [].concat(m).some(x => x.transparent || x.alphaTest > 0); sw.push([o, m, o.visible]); if (t) o.visible = false; else o.material = o.isSkinnedMesh ? this.depthSkin : this.depthMat; });
+        renderer.render(b.holder, cam);
+        for (const [o, m, v] of sw) { o.material = m; o.visible = v; }
+      }
+      renderer.autoClear = ac;
+    }
     this.skip.forEach((o, i) => o.visible = vis[i]);
     const u = this.aoMat.uniforms; u.invProj.value.copy(cam.projectionMatrixInverse); u.projY.value = cam.projectionMatrix.elements[5];
     u.radius.value = P.radius; u.intensity.value = P.intensity; u.bias.value = P.bias; u.power.value = P.power;
@@ -795,7 +809,18 @@ function setupCinePost(r, q, w, h) {
     }`;
   bloom.materialHighPassFilter.needsUpdate = true;
   let dof = null;
-  if (T.BokehPass) { dof = new T.BokehPass(G.scene, G.camera, { focus: 5, aperture: 0.0005, maxblur: 0.011, width: w, height: h }); dof.needsSwap = true; dof.enabled = false; composer.addPass(dof); }
+  if (T.BokehPass) {
+    dof = new T.BokehPass(G.scene, G.camera, { focus: 5, aperture: 0.0005, maxblur: 0.011, width: w, height: h }); dof.needsSwap = true; dof.enabled = false; composer.addPass(dof);
+    // reuse the contact-shadow depth (it draws animated people correctly) instead of the pass's own depth render
+    const own = dof.render.bind(dof);
+    dof.render = function (renderer, writeBuffer, readBuffer, dt, mask) {
+      const A = G.post && G.post.ao;
+      if (!A || !A.enabled) { this.uniforms.tDepth.value = this.renderTargetDepth.texture; return own(renderer, writeBuffer, readBuffer, dt, mask); }
+      this.uniforms.tDepth.value = A.depthRT.texture; this.uniforms.tColor.value = readBuffer.texture;
+      this.uniforms.nearClip.value = this.camera.near; this.uniforms.farClip.value = this.camera.far;
+      renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer); this.fsQuad.render(renderer);
+    };
+  }
   const fin = new T.ShaderPass(CineShader); composer.addPass(fin);
   const smaa = new T.SMAAPass(w, h); composer.addPass(smaa);
   return { composer, rp, bloom, fin, ao, dof, smaa, cine: true };
@@ -3615,7 +3640,7 @@ class Crowd {
     const zero = this._S;
     for (let i = 0; i < this.active; i++) {
       const c = this.chars[i]; if (!c) continue;
-      const hidden = c.hidden;
+      const hidden = c.hidden || (c.realOn && c.real);
       c.rig.root.updateMatrixWorld(true);
       for (const s of c.slots) {
         if (hidden || (s.held && c.held !== 'cup')) { zero.makeScale(0, 0, 0); s.mesh.setMatrixAt(i, zero); continue; }
@@ -3704,74 +3729,273 @@ function setHeldItem(c, model, color) {
 function setHeldScale(c, s) { c.heldScale = s; if (c.heldMeshes) for (const m of c.heldMeshes) { m.scale.setScalar(Math.max(0.05, s)); } }
 
 /* ---- 33_avatar.js ---- */
-/* ================= realistic avatars: rigged Mixamo characters driven by an animation pack and by the game's own poses ================= */
-// Models: Mixamo characters shipped with the three.js examples (Michelle, Vanguard, X Bot). Animations: a model-neutral pack
-// (idle, walk, run, nod, head shake, samba) extracted from the Mixamo clips; every other activity reuses the game's pose system.
-const AVATARS = [
-  { id: 'michelle', name: 'Michelle', blurb: 'Casual traveller', file: 'models/Michelle.glb', height: 1.68, hat: 1.18, hatY: 0.02 },
-  { id: 'vanguard', name: 'Vanguard', blurb: 'Armored explorer', file: 'models/Soldier.glb', height: 1.84, hat: 1.12, hatY: 0.0 },
-  { id: 'xbot', name: 'X Bot', blurb: 'Android, two colors you choose', file: 'models/Xbot.glb', height: 1.8, hat: 1.0, hatY: 0.0, tint: true },
-];
+/* ================= realistic people: rigged human models driven by an animation pack and by the game's own poses ================= */
+// Bodies, heads and outfits come from the Microsoft Rocketbox avatar library (MIT). The pack data (PEOPLE_BASES) is generated
+// by tools/people/build_people.py. Faces share one UV layout, so any head texture works on any head of the same sex; skin,
+// tops and bottoms of the "custom" bases are recolored at runtime from a garment mask. Animations: idle/walk/run/samba from the
+// model-neutral pack in people/anims.json; every other activity reuses the game's procedural pose system.
+const PEOPLE_DIR = 'people/';
+const PEOPLE_GLB_EXT = '.glb';
 const AV_BONES = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase'];
-const AV = { assets: {}, packP: null, pack: null };
-const AV_ACC = new Set(['shades', 'sunhat', 'capTop', 'capBand', 'capVisor', 'capBadge', 'phones']);
-function avatarDef(id) { return AVATARS.find(a => a.id === id) || null; }
-function avatarsSupported() { return typeof T.GLTFLoader === 'function' && T.SkeletonUtils && typeof fetch === 'function'; }
-function avAsset(id) {
-  const d = avatarDef(id); if (!d || !avatarsSupported()) return Promise.reject(new Error('avatar unavailable'));
-  return AV.assets[id] || (AV.assets[id] = new Promise((res, rej) => new T.GLTFLoader().load(d.file, res, undefined, rej)).catch(e => { delete AV.assets[id]; throw e; }));
+const AV_BIP = ['Pelvis', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'L_Clavicle', 'L_UpperArm', 'L_Forearm', 'L_Hand', 'R_Clavicle', 'R_UpperArm', 'R_Forearm', 'R_Hand', 'L_Thigh', 'L_Calf', 'L_Foot', 'L_Toe0', 'R_Thigh', 'R_Calf', 'R_Foot', 'R_Toe0'];
+const AV = { glb: {}, img: {}, tex: {}, looks: {}, packP: null, pack: null, bodies: new Set() };
+// what the player can pick in the dressing room (bases with garment masks) and the faces that go with them
+const LOOK_BASES = { m: [['mtank', 'Tank & shorts'], ['mpolo', 'Polo & shorts'], ['mtrunks', 'Swim trunks']], f: [['ftank', 'Tank & denim'], ['fbikini', 'Bikini'], ['ftee', 'Tee & jeans']] };
+const LOOK_FACES = { m: ['malea12', 'malea04', 'mtank', 'malea09', 'malea17', 'malea16', 'mpolo', 'malea08'], f: ['businessf01', 'femalep02', 'ftank', 'femalea03', 'ftee', 'sportsf02', 'fbikini', 'femalea12'] };
+const LOOK_COLORS = ['#22d3d8', '#f4f1e8', '#10264a', '#ff6a55', '#ffb547', '#1b6fd8', '#e84c8b', '#7bd389', '#8a5cf6', '#33343f', '#d8b48a', '#c8102e'];
+const LOOK_HATS = [['', 'None'], ['capFloral', 'Floral captain'], ['cap', 'Captain cap'], ['sun', 'Sun hat']];
+const LOOK_GLASSES = [['', 'None'], ['aviator', 'Aviators'], ['round', 'Round shades']];
+// the look from the player's photo: turquoise tank, tropical board shorts, short beard, floral captain cap and aviators
+const PHOTO_LOOK = { b: 'mtank', f: 'malea04', bd: 35, t: '#22d3d8', o: 'tropical', h: 'capFloral', g: 'aviator' };
+
+function randomLook(sex) {
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  sex = sex || (Math.random() < 0.5 ? 'm' : 'f');
+  const b = pick(LOOK_BASES[sex])[0], f = pick(LOOK_FACES[sex]);
+  return cleanLook({ b, f, bd: sex === 'm' ? pick([0, 0, 30, 60, 90]) : 0, t: pick(LOOK_COLORS), o: Math.random() < 0.3 ? 'tropical' : pick(LOOK_COLORS),
+    h: Math.random() < 0.25 ? pick(['sun', 'cap', 'capFloral']) : '', g: Math.random() < 0.3 ? pick(['aviator', 'round']) : '' });
 }
+function peopleSupported() { return typeof T.GLTFLoader === 'function' && T.SkeletonUtils && typeof fetch === 'function' && typeof PEOPLE_BASES === 'object'; }
+function baseDef(id) { return typeof PEOPLE_BASES === 'object' && PEOPLE_BASES[id] || null; }
+const HEX_RE = /^#[0-9a-f]{6}$/i;
+// sanitise a look (from the profile or from the network)
+function cleanLook(L) {
+  if (!L || typeof L !== 'object') return null;
+  const b = baseDef(L.b); if (!b) return null;
+  const f = baseDef(L.f) && baseDef(L.f).sex === b.sex ? L.f : '';
+  const col = v => typeof v === 'string' && HEX_RE.test(v) ? v.toLowerCase() : '';
+  const o = L.o === 'tropical' ? 'tropical' : col(L.o);
+  const h = LOOK_HATS.some(x => x[0] === L.h) ? L.h : '', g = LOOK_GLASSES.some(x => x[0] === L.g) ? L.g : '';
+  const bd = b.sex === 'm' ? clamp(Math.round(+L.bd || 0), 0, 100) : 0;
+  return { b: L.b, f, bd, t: b.mask ? col(L.t) : '', o: b.mask ? o : '', h, g };
+}
+function lookKey(L, size) { return [L.b, L.f || '', L.bd || 0, L.t || '', L.o || '', size].join('|'); }
+
+/* ---------- loading ---------- */
 function avPack() {
-  return AV.packP || (AV.packP = fetch('models/anims.json').then(r => { if (!r.ok) throw new Error('pack ' + r.status); return r.json(); }).then(j => {
+  return AV.packP || (AV.packP = fetch(PEOPLE_DIR + 'anims.json').then(r => { if (!r.ok) throw new Error('pack ' + r.status); return r.json(); }).then(j => {
     for (const k in j.clips) { const c = j.clips[k]; if (c.q) { c.q = Float32Array.from(c.q); c.h = Float32Array.from(c.h); } }
     AV.pack = j; return j;
   }).catch(e => { AV.packP = null; throw e; }));
 }
-function avReady(id) { return Promise.all([avAsset(id), avPack()]).then(([g]) => g); }
+function loadGLB(id) {
+  return AV.glb[id] || (AV.glb[id] = new Promise((res, rej) => new T.GLTFLoader().load(PEOPLE_DIR + id + PEOPLE_GLB_EXT, res, undefined, rej)).catch(e => { delete AV.glb[id]; throw e; }));
+}
+function loadImg(file) {
+  return AV.img[file] || (AV.img[file] = new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('img ' + file)); im.src = PEOPLE_DIR + file; }).catch(e => { delete AV.img[file]; throw e; }));
+}
+const _L2 = new Float32Array(256); for (let i = 0; i < 256; i++) { const c = i / 255; _L2[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+const _S2 = new Uint8ClampedArray(4097); for (let i = 0; i <= 4096; i++) { const c = i / 4096; _S2[i] = Math.round(255 * (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055)); }
+const toS = v => _S2[v >= 1 ? 4096 : v <= 0 ? 0 : (v * 4096) | 0];
+const linOf = hex => { const c = parseInt(hex.slice(1), 16); return [_L2[c >> 16 & 255], _L2[c >> 8 & 255], _L2[c & 255]]; };
+const linArr = a => a.map(v => _L2[Math.round(v * 255)]);
+function canvasOf(img, size) { const cv = document.createElement('canvas'); cv.width = cv.height = size; const g = cv.getContext('2d'); g.drawImage(img, 0, 0, size, size); return cv; }
+function texOf(src, srgb = true) {
+  const t = src instanceof HTMLCanvasElement ? new T.CanvasTexture(src) : new T.Texture(src);
+  t.needsUpdate = true; if (srgb) t.encoding = T.sRGBEncoding; t.anisotropy = Math.min(4, G.maxAniso || 1); return t;
+}
+// body texture: optional skin swap (to the face's tone), top and bottom recolor; folds and shading are kept
+async function bodyTexture(L, size) {
+  const b = baseDef(L.b), face = L.f ? baseDef(L.f) : null;
+  const img = await loadImg(b.id + '_b.jpg');
+  const skin = face && face.id !== b.id, top = L.t && b.mask && b.topRef, bot = L.o && b.mask && b.botRef;
+  if (!skin && !top && !bot) return size >= img.width ? img : canvasOf(img, size);
+  const [mask, print] = await Promise.all([loadImg(b.id + '_m.png'), L.o === 'tropical' ? loadImg('print_tropical.jpg') : null]);
+  const cv = canvasOf(img, size), g = cv.getContext('2d'), D = g.getImageData(0, 0, size, size), d = D.data;
+  const M = canvasOf(mask, size).getContext('2d').getImageData(0, 0, size, size).data;
+  let P = null;
+  if (print) { const pc = document.createElement('canvas'); pc.width = pc.height = size; const pg = pc.getContext('2d'); const rep = Math.max(2, Math.round(size / 170)); for (let y = 0; y < rep; y++) for (let x = 0; x < rep; x++) pg.drawImage(print, x * size / rep, y * size / rep, size / rep, size / rep); P = pg.getImageData(0, 0, size, size).data; }
+  const sr = skin ? linArr(face.skin).map((v, i) => v / Math.max(1e-4, linArr(b.skin)[i])) : null;
+  const tc = top ? linOf(L.t) : null, bc = bot && !print ? linOf(L.o) : null;
+  for (let i = 0; i < d.length; i += 4) {
+    let r = _L2[d[i]], gg = _L2[d[i + 1]], bb = _L2[d[i + 2]];
+    const ms = M[i] / 255, mt = M[i + 1] / 255, mb = M[i + 2] / 255;
+    if (sr && ms > 0.01) { r += (r * sr[0] - r) * ms; gg += (gg * sr[1] - gg) * ms; bb += (bb * sr[2] - bb) * ms; }
+    if (tc && mt > 0.01) { const sh = Math.pow(Math.min(1.6, (0.2126 * r + 0.7152 * gg + 0.0722 * bb) / b.topRef), 0.85); r += (tc[0] * sh - r) * mt; gg += (tc[1] * sh - gg) * mt; bb += (tc[2] * sh - bb) * mt; }
+    if (bot && mb > 0.01) {
+      const sh = Math.pow(Math.min(1.6, (0.2126 * r + 0.7152 * gg + 0.0722 * bb) / b.botRef), 0.85);
+      const c0 = P ? _L2[P[i]] : bc[0], c1 = P ? _L2[P[i + 1]] : bc[1], c2 = P ? _L2[P[i + 2]] : bc[2];
+      r += (c0 * sh - r) * mb; gg += (c1 * sh - gg) * mb; bb += (c2 * sh - bb) * mb;
+    }
+    d[i] = toS(r); d[i + 1] = toS(gg); d[i + 2] = toS(bb);
+  }
+  g.putImageData(D, 0, 0); return cv;
+}
+// head texture: the chosen face, plus a beard painted from a bearded Rocketbox head (shared UV layout)
+async function headTexture(L, size) {
+  const fid = L.f || L.b, img = await loadImg(fid + '_h.jpg');
+  if (!(L.bd > 0)) return size >= img.width ? img : canvasOf(img, size);
+  const beard = await loadImg('beard.png');
+  const cv = canvasOf(img, size), g = cv.getContext('2d');
+  const bc = document.createElement('canvas'); bc.width = bc.height = size; const bg = bc.getContext('2d');
+  bg.drawImage(beard, 0, 0, size, size); const B = bg.getImageData(0, 0, size, size), bd = B.data;
+  for (let i = 0; i < bd.length; i += 4) { const a = bd[i]; bd[i] = 20; bd[i + 1] = 14; bd[i + 2] = 11; bd[i + 3] = a; }
+  bg.putImageData(B, 0, 0);
+  g.globalAlpha = clamp(L.bd / 100, 0, 1); g.drawImage(bc, 0, 0); g.globalAlpha = 1;
+  return cv;
+}
+// hair cards (long hair) tinted to the chosen face's hair color
+async function cardsTexture(L) {
+  const b = baseDef(L.b); if (!b.cards) return null;
+  const img = await loadImg(b.id + '_o.png'); const face = L.f ? baseDef(L.f) : null;
+  if (!face || face.id === b.id) return img;
+  const cv = canvasOf(img, img.width), g = cv.getContext('2d'), D = g.getImageData(0, 0, cv.width, cv.height), d = D.data;
+  const s = linArr(b.cards), t = linArr(face.hair), k = [0, 1, 2].map(i => t[i] / Math.max(1e-4, s[i]));
+  for (let i = 0; i < d.length; i += 4) { d[i] = toS(_L2[d[i]] * k[0]); d[i + 1] = toS(_L2[d[i + 1]] * k[1]); d[i + 2] = toS(_L2[d[i + 2]] * k[2]); }
+  g.putImageData(D, 0, 0); return cv;
+}
+// all materials for a look at a given texture size (cached and shared between characters wearing the same look)
+function lookMaterials(L, size, normals) {
+  const key = lookKey(L, size) + (normals ? 'n' : '');
+  if (AV.looks[key]) return AV.looks[key];
+  const b = baseDef(L.b), fid = L.f || L.b;
+  return AV.looks[key] = Promise.all([bodyTexture(L, size), headTexture(L, size), cardsTexture(L),
+    normals ? loadImg(b.id + '_bn.jpg') : null, normals ? loadImg(fid + '_hn.jpg').catch(() => loadImg(b.id + '_hn.jpg')) : null]).then(([bt, ht, ct, bn, hn]) => {
+    const body = new T.MeshStandardMaterial({ map: texOf(bt), normalMap: bn ? texOf(bn, false) : null, roughness: 0.82, metalness: 0, skinning: true });
+    const head = new T.MeshStandardMaterial({ map: texOf(ht), normalMap: hn ? texOf(hn, false) : null, roughness: 0.58, metalness: 0, skinning: true });
+    if (head.normalMap) head.normalScale.set(0.7, 0.7);
+    const cards = ct ? new T.MeshStandardMaterial({ map: texOf(ct), roughness: 0.6, alphaTest: 0.42, side: T.DoubleSide, skinning: true }) : null;
+    return { body, head, cards };
+  }).catch(e => { delete AV.looks[key]; throw e; });
+}
 
-const _aq = new T.Quaternion(), _aq2 = new T.Quaternion(), _av = new T.Vector3(), _am = new T.Matrix4();
+/* ---------- accessories ---------- */
+const ACC = {};
+function accGeo() {
+  if (ACC.ready) return ACC;
+  ACC.ready = true;
+  // captain cap, unit size: band inner radius 1 at the brow; crown top at y 1.24
+  const crown = new T.LatheGeometry([[1.03, 0.48], [1.14, 0.62], [1.3, 0.82], [1.35, 0.96], [1.27, 1.08], [0.95, 1.18], [0.45, 1.23], [0, 1.24]].map(([x, y]) => new T.Vector2(x, y)), 40);
+  const band = new T.CylinderGeometry(1.05, 1.03, 0.5, 40, 1, true); band.translate(0, 0.25, 0);
+  // visor: a curved peak angled down over the eyes, longest at the front
+  const vp = [], vi = [], N = 18;
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N - 0.5) * Math.PI * 0.86, L = 0.62 * Math.pow(Math.cos(a), 0.8), c = Math.cos(a), s2 = Math.sin(a);
+    vp.push(s2 * 1.04, 0.03, c * 1.04, s2 * (1.04 + L), 0.03 - L * 0.42, c * (1.04 + L));
+    if (i < N) { const k = i * 2; vi.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+  }
+  const visor = new T.BufferGeometry(); visor.setAttribute('position', new T.Float32BufferAttribute(vp, 3)); visor.setIndex(vi); visor.computeVertexNormals();
+  const braid = new T.TorusGeometry(1.07, 0.04, 6, 30, Math.PI * 0.62); braid.rotateX(Math.PI / 2); braid.rotateY(Math.PI * 0.19 - Math.PI / 2 + Math.PI); braid.translate(0, 0.36, 0);
+  const badge = new T.CircleGeometry(0.17, 16); badge.translate(0, 0.37, 1.07);
+  ACC.cap = { crown, band, visor, braid, badge };
+  // sun hat
+  ACC.sun = { crown: new T.LatheGeometry([[2.25, -0.14], [2.1, -0.08], [1.12, 0.02], [1.12, 0.2], [1.05, 0.62], [0.7, 0.76], [0, 0.78]].map(([x, y]) => new T.Vector2(x, y)), 40) };
+  // aviator lens (teardrop), unit = 1 cm
+  const s = new T.Shape(); s.moveTo(-2.6, 1.3); s.bezierCurveTo(-0.6, 2.0, 2.2, 1.9, 2.5, 0.9); s.bezierCurveTo(2.7, -0.8, 1.3, -2.4, -0.2, -2.4); s.bezierCurveTo(-2.2, -2.3, -3.0, -0.4, -2.6, 1.3);
+  ACC.lens = new T.ShapeGeometry(s, 16); ACC.lensRim = new T.BufferGeometry().setFromPoints(s.getPoints(40).map(p => new T.Vector3(p.x, p.y, 0)));
+  const r = new T.Shape(); r.absarc(0, 0, 2.05, 0, Math.PI * 2, false); ACC.round = new T.ShapeGeometry(r, 24); ACC.roundRim = new T.BufferGeometry().setFromPoints(r.getPoints(40).map(p => new T.Vector3(p.x, p.y, 0)));
+  ACC.mat = {
+    white: new T.MeshStandardMaterial({ color: lin('#f6f6f2'), roughness: 0.6, side: T.DoubleSide }),
+    black: new T.MeshStandardMaterial({ color: lin('#16171c'), roughness: 0.35, metalness: 0.1, side: T.DoubleSide }),
+    gold: new T.MeshStandardMaterial({ color: lin('#e0b24a'), roughness: 0.3, metalness: 0.9 }),
+    straw: new T.MeshStandardMaterial({ color: lin('#e8d3a0'), roughness: 0.85, side: T.DoubleSide }),
+    lens: new T.MeshStandardMaterial({ color: lin('#3a2a1c'), roughness: 0.08, metalness: 0.5, transparent: true, opacity: 0.86, side: T.DoubleSide }),
+    lensDark: new T.MeshStandardMaterial({ color: lin('#16181c'), roughness: 0.08, metalness: 0.4, transparent: true, opacity: 0.9, side: T.DoubleSide }),
+    frame: new T.LineBasicMaterial({ color: lin('#c9c9c4') })
+  };
+  return ACC;
+}
+function floralTex() {
+  if (ACC.floral) return ACC.floral;
+  const t = new T.TextureLoader().load(PEOPLE_DIR + 'print_floral.jpg'); t.encoding = T.sRGBEncoding; t.wrapS = t.wrapT = T.RepeatWrapping; t.repeat.set(2, 1);
+  return ACC.floral = new T.MeshStandardMaterial({ map: t, roughness: 0.65, side: T.DoubleSide });
+}
+function makeHat(kind) {
+  const A = accGeo(), g = new T.Group();
+  const add = (geo, m) => { const x = new T.Mesh(geo, m); x.castShadow = true; g.add(x); return x; };
+  if (kind === 'cap' || kind === 'capFloral') {
+    g.userData.crown = add(A.cap.crown, kind === 'capFloral' ? floralTex() : A.mat.white); g.userData.top = 1.24;
+    add(A.cap.band, A.mat.black); add(A.cap.visor, A.mat.black); add(A.cap.braid, A.mat.gold); add(A.cap.badge, A.mat.gold);
+  } else if (kind === 'sun') { g.userData.crown = add(A.sun.crown, A.mat.straw); g.userData.top = 0.78; }
+  return g;
+}
+function makeGlasses(kind) {
+  const A = accGeo(), g = new T.Group(), round = kind === 'round';
+  for (const sd of [-1, 1]) {
+    const L = new T.Mesh(round ? A.round : A.lens, round ? A.mat.lensDark : A.mat.lens); L.position.set(sd * 3.25, 0, 0); if (sd < 0 && !round) L.scale.x = -1; g.add(L);
+    const rim = new T.LineLoop(round ? A.roundRim : A.lensRim, A.mat.frame); rim.position.copy(L.position); rim.scale.copy(L.scale); g.add(rim);
+    const arm = new T.Mesh(new T.BoxGeometry(0.18, 0.25, 9.5), A.mat.frame.color ? new T.MeshStandardMaterial({ color: A.mat.frame.color, metalness: 0.9, roughness: 0.3 }) : A.mat.gold);
+    arm.position.set(sd * 6.75, 0.9, -4.6); g.add(arm);
+  }
+  const bridge = new T.Mesh(new T.BoxGeometry(2.0, 0.16, 0.16), new T.MeshStandardMaterial({ color: A.mat.frame.color, metalness: 0.9, roughness: 0.3 })); bridge.position.set(0, 1.2, 0); g.add(bridge);
+  if (!round) { const b2 = bridge.clone(); b2.position.y = 0.55; b2.scale.x = 0.7; g.add(b2); }
+  return g;
+}
+
+/* ---------- the body ---------- */
+const _aq = new T.Quaternion(), _aq2 = new T.Quaternion(), _av = new T.Vector3(), _av2 = new T.Vector3();
 class RealBody {
-  constructor(def, gltf) {
-    this.def = def; this.holder = new T.Group(); this.inner = new T.Group(); this.holder.add(this.inner);
+  constructor(base, gltf, look) {
+    this.base = base; this.look = look; this.holder = new T.Group(); this.inner = new T.Group(); this.holder.add(this.inner); AV.bodies.add(this);
     const sc = T.SkeletonUtils.clone(gltf.scene); this.inner.add(sc); this.model = sc;
-    this.mats = [];
-    sc.traverse(o => {
-      if (!o.isMesh) return;
-      o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
-      o.material = [].concat(o.material).map(m => { const c = m.clone(); c.envMapIntensity = 0.9; this.mats.push(c); return c; });
-      if (o.material.length === 1) o.material = o.material[0];
-    });
-    const find = n => { let f = null; sc.traverse(o => { if (!f && o.isBone && o.name.replace(/^mixamorig:?/, '') === n) f = o; }); return f; };
-    const B = this.bones = AV_BONES.map(find);
+    this.meshes = [];
+    sc.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; this.meshes.push(o); } });
+    this.kinds = this.meshes.map(m => [].concat(m.material).map(x => /head/.test(x.name) ? 'head' : /opacity/.test(x.name) ? 'cards' : 'body'));
+    const byName = {}; sc.traverse(o => { if (o.isBone) byName[o.name.replace(/^mixamorig:?/, '').replace(/^Bip01_/, '')] = o; });
+    const B = this.bones = AV_BONES.map((n, i) => byName[n] || byName[AV_BIP[i]] || null);
     const wp = o => o.getWorldPosition(new T.Vector3());
     this.holder.updateMatrixWorld(true);
-    // face +z like the game's characters, and scale to the avatar's height
+    // face +z like the game's characters
     const fwd = wp(B[17]).sub(wp(B[16])).add(wp(B[21]).sub(wp(B[20]))); fwd.y = 0; fwd.normalize();
     this.inner.quaternion.setFromUnitVectors(fwd, V3(0, 0, 1)); this.holder.updateMatrixWorld(true);
-    let top = null; sc.traverse(o => { if (o.isBone && /HeadTop_End$/.test(o.name)) top = o; });
-    const topY = top ? wp(top).y : wp(B[5]).y + 0.2;
-    this.inner.scale.setScalar(def.height / Math.max(0.01, topY)); this.holder.updateMatrixWorld(true);
-    // bind pose in model space (holder space)
+    const box = new T.Box3(); for (const m of this.meshes) { m.geometry.computeBoundingBox(); box.union(m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld)); }
+    const s = (base.height || 1.75) * (look.scale || 1) / Math.max(1e-3, box.max.y - box.min.y);
+    this.inner.scale.setScalar(s); this.inner.position.y = -box.min.y * s; this.holder.updateMatrixWorld(true);
     this.bindQ = B.map(b => b.getWorldQuaternion(new T.Quaternion()));
     this.parentIdx = B.map(b => B.indexOf(b.parent));
     this.parentQ = B.map(b => b.parent.getWorldQuaternion(new T.Quaternion()));
     this.hipsParentInv = new T.Matrix4().copy(B[0].parent.matrixWorld).invert();
     const hb = wp(B[0]); this.hipH = hb.y; this.hipBind = hb;
-    // alignment from the bind T-pose to the game's rest pose (arms hanging, legs straight down)
-    const down = V3(0, -1, 0), q = i => new T.Quaternion().setFromUnitVectors(wp(B[i + 1]).sub(wp(B[i])).normalize(), down);
-    const qL = q(7), qR = q(11), qLL = q(14), qRL = q(18);
-    this.qa = B.map(() => new T.Quaternion());
-    for (const i of [7, 8, 9]) this.qa[i].copy(qL); for (const i of [11, 12, 13]) this.qa[i].copy(qR);
-    for (const i of [14, 15, 16, 17]) this.qa[i].copy(qLL); for (const i of [18, 19, 20, 21]) this.qa[i].copy(qRL);
-    // sockets for hats/glasses (head), the lei (chest) and held items (right hand), expressed in the game's bone spaces
-    const headTop = top ? wp(top).sub(wp(B[5])) : V3(0, 0.2, 0);
-    const hs = B[5].getWorldScale(new T.Vector3()).x, cs = B[3].getWorldScale(new T.Vector3()).x, rs = B[13].getWorldScale(new T.Vector3()).x;
-    this.head = this.socket(B[5], this.bindQ[5], hs, 1.12 * headTop.length() / 0.276 * def.hat, V3(0, def.hatY || 0, headTop.z * 0.5));
-    this.chest = this.socket(B[3], this.bindQ[3], cs, def.height / 1.75, V3(0, -0.12 * def.height / 1.75, 0));
-    this.hand = this.socket(B[13], this.bindQ[13].clone().premultiply(this.qa[13]), rs, def.height / 1.75, V3(0, 0, 0));
+    // rest-pose alignment: to arms-down/legs-down for the game's poses (qa) and to the clip pack's T-pose (qt)
+    const dir = i => wp(B[i + 1]).sub(wp(B[i])).normalize();
+    const q = (i, to) => new T.Quaternion().setFromUnitVectors(dir(i), to);
+    const down = V3(0, -1, 0);
+    this.qa = B.map(() => new T.Quaternion()); this.qt = B.map(() => new T.Quaternion());
+    const qaL = q(7, down), qaR = q(11, down), qtL = q(7, V3(1, 0, 0)), qtR = q(11, V3(-1, 0, 0)), qLL = q(14, down), qRL = q(18, down);
+    for (const i of [7, 8, 9]) { this.qa[i].copy(qaL); this.qt[i].copy(qtL); }
+    for (const i of [11, 12, 13]) { this.qa[i].copy(qaR); this.qt[i].copy(qtR); }
+    for (const i of [14, 15, 16, 17]) { this.qa[i].copy(qLL); this.qt[i].copy(qLL); }
+    for (const i of [18, 19, 20, 21]) { this.qa[i].copy(qRL); this.qt[i].copy(qRL); }
+    this.bindT = this.bindQ.map((b, i) => b.clone().premultiply(this.qt[i]));
+    // head measurements from the skinned vertices for hats and glasses
+    this.measureHead(byName);
+    const rs = B[13].getWorldScale(new T.Vector3()).x;
+    this.hand = this.socket(B[13], this.bindQ[13].clone().premultiply(this.qa[13]), rs, base.height / 1.75, V3(0, 0, 0));
+    // face rig (Rocketbox): mouth corners and cheeks for a smile, eyelids for blinking
+    this.face = [];
+    const fb = (n, v) => { const b = byName[n]; if (b) this.face.push({ b, rest: b.position.clone(), v }); };
+    const hq = this.bindQ[5], toLocal = (b, v) => v.clone().applyQuaternion(b.parent.getWorldQuaternion(new T.Quaternion()).invert()).divideScalar(b.parent.getWorldScale(new T.Vector3()).x);
+    for (const [n, v] of [['LMouthCorner', V3(0.0035, 0.0045, -0.002)], ['RMouthCorner', V3(-0.0035, 0.0045, -0.002)], ['LCheek', V3(0.001, 0.0025, 0)], ['RCheek', V3(-0.001, 0.0025, 0)], ['MBottomLip', V3(0, -0.0008, 0)]]) { const b = byName[n]; if (b) fb(n, toLocal(b, v)); }
+    this.blink = [];
+    for (const [n, v] of [['LEyeBlinkTop', V3(0, -0.0085, 0.001)], ['REyeBlinkTop', V3(0, -0.0085, 0.001)], ['LEyeBlinkBottom', V3(0, 0.0018, 0)], ['REyeBlinkBottom', V3(0, 0.0018, 0)]]) { const b = byName[n]; if (b) this.blink.push({ b, rest: b.position.clone(), v: toLocal(b, v) }); }
+    this.blinkT = 2 + Math.random() * 3; this.blinkA = 0; this.smile = look.smile != null ? look.smile : 0.6;
     this.D = B.map(() => new T.Quaternion()); this.Dt = B.map(() => new T.Quaternion()); this.W = B.map(() => new T.Quaternion());
     this.hp = this.hipBind.clone(); this.hpt = new T.Vector3(); this.t = Math.random() * 10; this.first = true; this.clip = '';
-    this.tint(null, null);
+    this.setAcc(look.h, look.g);
+  }
+  measureHead(byName) {
+    const B = this.bones, headI = [];
+    let top = -1e9, front = -1e9, back = 1e9, minX = 1e9, maxX = -1e9, n = 0; const c = new T.Vector3();
+    const eyeL = byName.LEye ? byName.LEye.getWorldPosition(new T.Vector3()) : null, eyeR = byName.REye ? byName.REye.getWorldPosition(new T.Vector3()) : null;
+    const headP = B[5].getWorldPosition(new T.Vector3());
+    const eyeY = eyeL && eyeR ? (eyeL.y + eyeR.y) / 2 : headP.y + 0.08;
+    for (const m of this.meshes) {
+      if (!m.isSkinnedMesh) continue;
+      const bi = m.skeleton.bones.indexOf(B[5]); if (bi < 0) continue;
+      const P = m.geometry.attributes.position, SI = m.geometry.attributes.skinIndex, SW = m.geometry.attributes.skinWeight;
+      for (let i = 0; i < P.count; i++) {
+        const wn = SW.normalized ? (SW.array instanceof Uint8Array ? 255 : 65535) : 1;
+        const w = (SI.getX(i) === bi ? SW.getX(i) : 0) + (SI.getY(i) === bi ? SW.getY(i) : 0) + (SI.getZ(i) === bi ? SW.getZ(i) : 0) + (SI.getW(i) === bi ? SW.getW(i) : 0);
+        if (w / wn < 0.6) continue;
+        c.fromBufferAttribute(P, i).applyMatrix4(m.matrixWorld);
+        if (c.y > top) top = c.y;
+        if (Math.abs(c.y - (eyeY + 0.035)) < 0.02) { minX = Math.min(minX, c.x); maxX = Math.max(maxX, c.x); front = Math.max(front, c.z); back = Math.min(back, c.z); n++; }
+      }
+    }
+    if (!n) { top = headP.y + 0.2; minX = headP.x - 0.08; maxX = headP.x + 0.08; front = headP.z + 0.1; back = headP.z - 0.1; }
+    const hs = B[5].getWorldScale(new T.Vector3()).x, hq = this.bindQ[5];
+    this.headInfo = { top, eyeY, w: maxX - minX, cx: (minX + maxX) / 2, cz: (front + back) / 2, front, depth: front - back, eyeL, eyeR };
+    this.headSock = this.socket(B[5], hq, hs, 1, V3(0, 0, 0));
   }
   socket(bone, modelQ, boneScale, scale, offset) {
     const s = new T.Group();
@@ -3780,9 +4004,30 @@ class RealBody {
     s.scale.setScalar(scale / boneScale);
     bone.add(s); return s;
   }
-  tint(a, b) {
-    if (!this.def.tint) return;
-    for (const m of this.mats) { if (/Joints/i.test(m.name)) m.color.copy(lin(b || '#2a3340')); else m.color.copy(lin(a || '#d8dde3')); m.metalness = 0.35; m.roughness = 0.35; }
+  setAcc(hat, glasses) {
+    if (this.hatObj) { this.hatObj.parent.remove(this.hatObj); this.hatObj = null; }
+    if (this.glassObj) { this.glassObj.parent.remove(this.glassObj); this.glassObj = null; }
+    const H = this.headInfo, root = this.headSock.parent, hs = root.getWorldScale(new T.Vector3()).x;
+    // everything in model space, then expressed in the head bone's frame through a small socket group
+    const place = (obj, pos, scale) => {
+      const s = new T.Group(); s.add(obj);
+      const hq = this.bindQ[5];
+      s.quaternion.copy(hq).invert();
+      s.position.copy(pos).sub(this.bones[5].getWorldPosition(new T.Vector3())).applyQuaternion(_aq.copy(hq).invert()).divideScalar(hs);
+      s.scale.setScalar(scale / hs); root.add(s); return s;
+    };
+    this.holder.updateMatrixWorld(true);
+    if (hat) {
+      // fit the band to the head (and hair) at the brow: width and depth measured from the skinned head
+      const r = clamp(H.w / 2 * 1.03, 0.072, 0.1), zs = clamp(H.depth / H.w, 1.0, 1.3), brow = H.eyeY + (hat === 'sun' ? 0.052 : 0.046), hobj = makeHat(hat);
+      const need = (H.top + 0.012 - brow) / r; if (need > hobj.userData.top) hobj.userData.crown.scale.y = Math.min(1.5, need / hobj.userData.top);
+      hobj.scale.z = zs; hobj.rotation.x = -0.06;
+      this.hatObj = place(hobj, V3(H.cx, brow, H.cz), r);
+    }
+    if (glasses && H.eyeL && H.eyeR) {
+      const mid = H.eyeL.clone().add(H.eyeR).multiplyScalar(0.5), ipd = H.eyeL.distanceTo(H.eyeR);
+      this.glassObj = place(makeGlasses(glasses), V3(mid.x, mid.y + 0.001, Math.max(mid.z + 0.022, H.front - 0.012)), ipd / 6.5);
+    }
   }
   // pose from the game's procedural rig (any activity)
   fromRig(c) {
@@ -3796,8 +4041,9 @@ class RealBody {
     for (let i = 7; i < 22; i++) if (i !== 10) D[i].multiply(this.qa[i]);
     const p = r.root.worldToLocal(r.hips.getWorldPosition(_av));
     this.hpt.copy(p).multiplyScalar(this.hipH / Math.max(0.3, r.hipH));
+    this.useT = false;
   }
-  // pose from the animation pack
+  // pose from the animation pack (deltas from a T-pose)
   fromClip(name, t) {
     const c = AV.pack && AV.pack.clips[name]; if (!c || !c.q) return false;
     const fps = AV.pack.fps, n = c.n, f = ((t % c.dur) + c.dur) % c.dur * fps, i0 = Math.floor(f) % n, i1 = (i0 + 1) % n, a = f - Math.floor(f);
@@ -3805,6 +4051,8 @@ class RealBody {
     for (let k = 0; k < nb; k++) {
       const o0 = (i0 * nb + k) * 4, o1 = (i1 * nb + k) * 4;
       D[k].set(q[o0], q[o0 + 1], q[o0 + 2], q[o0 + 3]); _aq.set(q[o1], q[o1 + 1], q[o1 + 2], q[o1 + 3]); D[k].slerp(_aq, a);
+      // express the clip's T-pose-relative rotation against this model's rest pose
+      D[k].multiply(this.qt[k]);
     }
     const h = c.h, j0 = i0 * 3, j1 = i1 * 3;
     this.hpt.set(lerp(h[j0], h[j1], a) * this.hipH * 0.3 + this.hipBind.x, lerp(h[j0 + 1], h[j1 + 1], a) * this.hipH, lerp(h[j0 + 2], h[j1 + 2], a) * this.hipH * 0.3 + this.hipBind.z);
@@ -3816,7 +4064,7 @@ class RealBody {
     let clip = '', rate = 1;
     if (a === 'idle' && !c.held && !c.idleStyle) clip = 'idle';
     else if (a === 'walk') { if (sp > 3.4) { clip = 'run'; rate = sp / 4.6; } else { clip = 'walk'; rate = Math.max(0.6, sp / 1.45); } }
-    else if (a === 'dance') clip = 'samba';
+    else if (a === 'dance' && !(c.danceStyle % 2)) clip = 'samba';
     if (clip !== this.clip) { this.clip = clip; this.t = clip === 'walk' || clip === 'run' ? (c.phase || 0) / TAU * (AV.pack && AV.pack.clips[clip] ? AV.pack.clips[clip].dur : 1) : this.t; }
     this.t += dt * rate;
     if (!clip || !this.fromClip(clip, this.t)) this.fromRig(c);
@@ -3831,40 +4079,56 @@ class RealBody {
     }
     this.hp.lerp(this.hpt, k);
     if (B[0]) B[0].position.copy(this.hp).applyMatrix4(this.hipsParentInv);
+    // face: a relaxed smile (bigger when talking or dancing) and blinking
+    const want = (a === 'talk' || a === 'wave' || a === 'cheer' || a === 'dance' || a === 'pose') ? 1 : this.smile;
+    this.smileA = this.smileA == null ? want : lerp(this.smileA, want, 1 - Math.exp(-4 * dt));
+    for (const f of this.face) f.b.position.copy(f.rest).addScaledVector(f.v, this.smileA);
+    this.blinkT -= dt; if (this.blinkT < 0) { this.blinkT = 2.5 + Math.random() * 4; this.blinkA = 1; }
+    const bl = this.blinkA > 0 ? Math.sin(Math.min(1, this.blinkA) * Math.PI) : 0; this.blinkA = Math.max(0, this.blinkA - dt * 7);
+    for (const e of this.blink) e.b.position.copy(e.rest).addScaledVector(e.v, bl);
   }
-  // move the classic character's hats, glasses and held items onto this body; hide the rest of the classic meshes
+  // held items (cups, food) go to the right hand; the classic body is hidden
   adopt(c) {
-    if (c.meshes) for (const m of c.meshes) {
-      const k = m.userData.k;
-      if (AV_ACC.has(k)) { if (m.parent !== this.head) this.head.add(m); m.visible = true; }
-      else if (k === 'lei') { if (m.parent !== this.chest) this.chest.add(m); m.visible = true; }
-      else m.visible = false;
-    }
+    if (c.meshes) for (const m of c.meshes) m.visible = false;
     if (c.heldMeshes) for (const m of c.heldMeshes) if (m.parent !== this.hand) this.hand.add(m);
   }
-  dispose() { if (this.holder.parent) this.holder.parent.remove(this.holder); }
+  setMaterials(M) {
+    this.meshes.forEach((m, i) => {
+      const mats = this.kinds[i].map(k => k === 'head' ? M.head : k === 'cards' ? (M.cards || M.head) : M.body);
+      m.material = mats.length === 1 ? mats[0] : mats;
+    });
+  }
+  dispose() { if (this.holder.parent) this.holder.parent.remove(this.holder); AV.bodies.delete(this); }
 }
-// give a Char a realistic body (or take it away). Loads lazily; the classic body shows until the model arrives.
-function setRealBody(c, id, parent, tintA, tintB) {
+// give a Char a realistic body for a look (or take it away). Loads lazily; the classic body shows until it arrives.
+function setRealBody(c, look, parent, o = {}) {
   if (!c) return;
-  const want = id && id !== 'classic' && avatarDef(id) ? id : '';
-  if (c.realId === want && (c.real || c.realLoading === want)) { if (c.real) c.real.tint(tintA, tintB); return; }
-  if (c.real) { const r = c.real; c.real = null; r.dispose(); if (c.meshes) { buildCharMesh(c); } }
-  c.realId = want; c.realLoading = '';
-  if (!want) { if (c.meshes) for (const m of c.meshes) m.visible = true; return; }
-  c.realLoading = want;
-  avReady(want).then(g => {
-    if (c.realId !== want || c.real) return;
-    const rb = new RealBody(avatarDef(want), g); rb.tint(tintA, tintB);
-    c.real = rb; c.realLoading = '';
-    (parent || G.scene).add(rb.holder);
-  }).catch(e => { console.warn('avatar', e); if (c.realId === want) { c.realId = ''; c.realLoading = ''; if (c.meshes) for (const m of c.meshes) m.visible = true; } });
+  const L = look && peopleSupported() ? cleanLook(look) : null;
+  const key = L ? JSON.stringify(L) + '|' + (o.size || 1024) : '';
+  if (c.realKey === key && (c.real || c.realLoading === key)) return;
+  const prevBase = c.real && L && c.real.base.id === L.b ? c.real : null;
+  if (c.real && !prevBase) { const r = c.real; c.real = null; r.dispose(); if (c.meshes) buildCharMesh(c); }
+  c.realKey = key; c.realLoading = '';
+  if (!L) { if (c.meshes) for (const m of c.meshes) m.visible = true; return; }
+  c.realLoading = key;
+  const size = o.size || 1024;
+  Promise.all([loadGLB(L.b), lookMaterials(L, size, o.normals !== false), avPack().catch(() => null)]).then(([g, M]) => {
+    if (c.realKey !== key) return;
+    let rb = c.real;
+    if (!rb || rb.base.id !== L.b) { if (rb) rb.dispose(); rb = new RealBody(baseDef(L.b), g, { ...L, scale: o.scale, smile: o.smile }); (parent || G.scene).add(rb.holder); }
+    else rb.setAcc(L.h, L.g);
+    rb.setMaterials(M); c.real = rb; c.realLoading = '';
+  }).catch(e => { console.warn('people', e); if (c.realKey === key) { c.realKey = ''; c.realLoading = ''; if (c.real) { c.real.dispose(); c.real = null; } if (c.meshes) for (const m of c.meshes) m.visible = true; } });
 }
 function updateRealBody(c, dt) {
   const r = c && c.real; if (!r) return;
   r.update(dt, c, c.rig.root); r.adopt(c);
   r.holder.visible = c.rig.root.visible !== false && !c.hidden;
 }
+
+/* ---- 34_people_data.js ---- */
+/* generated by tools/people/build_people.py: realistic people (Microsoft Rocketbox avatars, MIT) */
+const PEOPLE_BASES = {"mtank":{"id":"mtank","src":"Sports_Male_04","sex":"m","role":"custom","skin":[0.7863,0.5529,0.4353],"hair":[0.149,0.098,0.0784],"topRef":0.0233,"botRef":0.5149,"mask":true,"tris":7520,"height":1.804},"mpolo":{"id":"mpolo","src":"Male_Adult_01","sex":"m","role":"custom","skin":[0.7275,0.5529,0.451],"hair":[0.1373,0.0824,0.0431],"cards":[0.1529,0.098,0.0627],"topRef":0.4636,"botRef":0.215,"mask":true,"tris":7440,"height":1.824},"mtrunks":{"id":"mtrunks","src":"Sports_Male_01","sex":"m","role":"custom","skin":[0.8627,0.6275,0.502],"hair":[0.2196,0.1569,0.098],"topRef":0,"botRef":0.0085,"mask":true,"tris":7358,"height":1.804},"ftank":{"id":"ftank","src":"Female_Party_01","sex":"f","role":"custom","skin":[0.7686,0.5373,0.4],"hair":[0.7529,0.6039,0.4275],"cards":[0.8,0.6667,0.4824],"topRef":0.4851,"botRef":0.1102,"mask":true,"tris":10254,"height":1.753},"fbikini":{"id":"fbikini","src":"Sports_Female_01","sex":"f","role":"custom","skin":[0.7843,0.549,0.4235],"hair":[0.3922,0.3059,0.1922],"topRef":0.0674,"botRef":0.0843,"mask":true,"tris":8480,"height":1.733},"ftee":{"id":"ftee","src":"Female_Adult_17","sex":"f","role":"custom","skin":[0.7961,0.5412,0.4118],"hair":[0.6039,0.4569,0.3098],"cards":[0.5882,0.4314,0.2824],"topRef":0.2579,"botRef":0.2458,"mask":true,"tris":8516,"height":1.751},"malea04":{"id":"malea04","src":"Male_Adult_04","sex":"m","role":"fixed","skin":[0.5059,0.3608,0.2549],"hair":[0.1098,0.0784,0.0588],"cards":[0.1294,0.0941,0.0745],"tris":8684,"height":1.869},"malea08":{"id":"malea08","src":"Male_Adult_08","sex":"m","role":"fixed","skin":[0.7765,0.5647,0.4431],"hair":[0.1176,0.0667,0.0353],"cards":[0.1647,0.1059,0.0706],"tris":7364,"height":1.826},"malea09":{"id":"malea09","src":"Male_Adult_09","sex":"m","role":"fixed","skin":[0.7725,0.5882,0.4627],"hair":[0.1137,0.1059,0.0941],"cards":[0.0902,0.0706,0.0588],"tris":7428,"height":1.822},"malea12":{"id":"malea12","src":"Male_Adult_12","sex":"m","role":"fixed","skin":[0.3686,0.2353,0.1686],"hair":[0.0471,0.0314,0.0157],"tris":6722,"height":1.807},"malea16":{"id":"malea16","src":"Male_Adult_16","sex":"m","role":"fixed","skin":[0.8196,0.6196,0.502],"hair":[0.6118,0.4784,0.3294],"tris":7064,"height":1.809},"malea17":{"id":"malea17","src":"Male_Adult_17","sex":"m","role":"fixed","skin":[0.5647,0.3902,0.2353],"hair":[0.0941,0.0941,0.0824],"tris":7084,"height":1.812},"businessm04":{"id":"businessm04","src":"Business_Male_04","sex":"m","role":"crew","skin":[0.7196,0.4902,0.3843],"hair":[0.7647,0.5137,0.3922],"tris":7326,"height":1.801},"pilotm03":{"id":"pilotm03","src":"Pilot_Male_03","sex":"m","role":"crew","skin":[0.7294,0.4784,0.3529],"hair":[0.0627,0.0431,0.0314],"tris":7816,"height":1.855},"femalep02":{"id":"femalep02","src":"Female_Party_02","sex":"f","role":"fixed","skin":[0.8059,0.5294,0.3412],"hair":[0.1373,0.0902,0.0471],"cards":[0.1176,0.0667,0.0353],"tris":9874,"height":1.79},"sportsf02":{"id":"sportsf02","src":"Sports_Female_02","sex":"f","role":"fixed","skin":[0.7804,0.5725,0.4353],"hair":[0.0902,0.0745,0.0627],"cards":[0.0549,0.0392,0.0275],"tris":8580,"height":1.737},"femalea03":{"id":"femalea03","src":"Female_Adult_03","sex":"f","role":"fixed","skin":[0.7451,0.5098,0.4],"hair":[0.0588,0.0471,0.0392],"cards":[0.0784,0.0667,0.051],"tris":9208,"height":1.739},"femalea12":{"id":"femalea12","src":"Female_Adult_12","sex":"f","role":"fixed","skin":[0.6961,0.4941,0.3765],"hair":[0.1255,0.0706,0.0471],"cards":[0.2078,0.1176,0.0784],"tris":8774,"height":1.727},"businessf01":{"id":"businessf01","src":"Business_Female_01","sex":"f","role":"crew","skin":[0.702,0.498,0.3255],"hair":[0.0902,0.0784,0.0549],"cards":[0.0941,0.0745,0.051],"tris":8966,"height":1.74},"pilotf02":{"id":"pilotf02","src":"Pilot_Female_02","sex":"f","role":"crew","skin":[0.702,0.498,0.3255],"hair":[0.0902,0.0784,0.0549],"tris":8458,"height":1.777},"cheff01":{"id":"cheff01","src":"Chef_Female_01","sex":"f","role":"crew","skin":[0.749,0.5137,0.4039],"hair":[0.8,0.8078,0.8196],"tris":7460,"height":1.733}};
 
 /* ---- 40_player.js ---- */
 /* ================= player controller, input, camera ================= */
@@ -3943,13 +4207,12 @@ function readKeys() {
   return { x: Input.joyId !== null ? Input.mx : x, y: Input.joyId !== null ? Input.my : y, run: k.has('ShiftLeft') || k.has('ShiftRight') || (Input.joyId !== null && Math.hypot(Input.mx, Input.my) > 0.88) };
 }
 
-function avTints(app) { return [OUTFIT[app.topColor] || '#d8dde3', OUTFIT[app.bottomColor] || '#2a3340']; }
 function initPlayer(app) {
   const c = new Char(app, { seed: 1 }); c.look = 0.3;
   buildCharMesh(c);
-  if (Player.char) { G.scene.remove(Player.char.rig.root); if (Player.char.real) Player.char.real.dispose(); Player.char.realId = 'gone'; }
+  if (Player.char) { G.scene.remove(Player.char.rig.root); if (Player.char.real) Player.char.real.dispose(); Player.char.realKey = 'gone'; }
   Player.char = c; G.scene.add(c.rig.root);
-  setRealBody(c, app.av, G.scene, ...avTints(app));
+  setRealBody(c, app.real, G.scene, { size: 1024, smile: 0.7 });
 }
 function placePlayer(x, y, z, yaw) {
   Player.pos.set(x, y, z); Player.velY = 0; Player.yaw = yaw; Player.mode = 'walk'; Player.water = null; Player.onGround = true;
@@ -4143,6 +4406,48 @@ const NPC_LINES = [
 ];
 const NPCS = [];
 const Staff = [];
+// realistic people for passengers and crew (see 33_avatar.js). Each NPC keeps its classic rig for movement and poses;
+// the nearest ones get a realistic body, the rest stay as the light instanced crowd.
+const NPC_LOOKS = [
+  { b: 'mtank', t: '#ff6a55', o: '#10264a' }, { b: 'ftank' }, { b: 'malea12' }, { b: 'fbikini' }, { b: 'mpolo' }, { b: 'femalep02' },
+  { b: 'mtrunks', f: 'malea04', bd: 60, o: '#2fd3c6' }, { b: 'ftee', f: 'businessf01', t: '#ffb547' }, { b: 'malea09' }, { b: 'sportsf02' },
+  { b: 'mtank', f: 'malea17', t: '#f4f1e8', o: 'tropical' }, { b: 'femalea03' }, { b: 'malea16' }, { b: 'ftank', f: 'femalea03', t: '#e84c8b', h: 'sun' },
+  { b: 'mtrunks' }, { b: 'fbikini', f: 'businessf01', t: '#2fd3c6' }, { b: 'malea04' }, { b: 'femalea12' }, { b: 'mpolo', f: 'malea12', t: '#1b6fd8', o: '#f4f1e8', g: 'aviator' },
+  { b: 'ftee' }, { b: 'malea08' }, { b: 'ftank', f: 'femalep02', t: '#7bd389', g: 'round' }, { b: 'malea17' }, { b: 'fbikini', f: 'ftee', t: '#ffb547' },
+  { b: 'mtank', f: 'malea09', t: '#8a5cf6', o: '#f4f1e8' }, { b: 'ftee', f: 'sportsf02', t: '#f4f1e8', o: '#10264a' }, { b: 'mtrunks', f: 'malea16', o: '#ff6a55' }, { b: 'femalep02', h: 'sun' },
+];
+const CREW_LOOKS = { captain: { b: 'pilotm03' }, bartend: [{ b: 'businessm04' }, { b: 'businessf01' }, { b: 'pilotf02' }], dj: [{ b: 'malea17', g: 'round' }, { b: 'malea04' }], port: { b: 'cheff01' } };
+function realCrowdOn() { return typeof peopleSupported === 'function' && peopleSupported() && G.quality && G.quality.detail >= 1 && G.settings && G.settings.people !== false; }
+const _rc = [];
+function updateRealCrowd(dt) {
+  const on = realCrowdOn(), want = on ? Math.min(G.quality.detail >= 2 ? 18 : 10, G.peopleCap == null ? 99 : G.peopleCap) : 0, cam = G.camera.position, size = G.quality.detail >= 2 ? 1024 : 512;
+  _rc.length = 0;
+  const consider = c => {
+    if (!c || !c.plook) return;
+    if (!on || c.hidden || c.slot >= G.crowd.active && c.slot !== undefined && !c.staff) { c.realOn = false; if (c.real) c.real.holder.visible = false; return; }
+    const p = c.rig.root.position, d = p.distanceTo(cam);
+    _v1.copy(p).sub(cam).normalize(); G.camera.getWorldDirection(_v2);
+    c._rs = d * (_v1.dot(_v2) > 0.2 || d < 6 ? 1 : 3) - (c.realOn ? 4 : 0);
+    if (d < 60) _rc.push(c); else { c.realOn = false; if (c.real) c.real.holder.visible = false; }
+  };
+  for (const n of NPCS) consider(n.ch);
+  for (const st of Staff) consider(st.c);
+  _rc.sort((a, b) => a._rs - b._rs);
+  for (let i = 0; i < _rc.length; i++) {
+    const c = _rc[i], use = i < want;
+    if (use && !c.realOn) { c.realOn = true; setRealBody(c, c.plook, G.scene, { size, normals: size >= 1024 }); }
+    else if (!use && c.realOn) c.realOn = false;
+    if (c.real) { c.real.holder.visible = c.realOn; if (c.realOn) { c.real.update(dt, c, c.rig.root); if (c.heldMeshes) c.real.adopt(c); } }
+  }
+  // the captain and the port bartender are single detailed characters
+  for (const [c, L] of [[G.captain, CREW_LOOKS.captain], [G.portStaff, CREW_LOOKS.port]]) {
+    if (!c) continue;
+    const want1 = peopleSupported() && G.settings && G.settings.people !== false;
+    const key = want1 ? JSON.stringify(L) : '';
+    if (c.lookKey !== key) { c.lookKey = key; setRealBody(c, want1 ? L : null, G.scene, { size: 1024 }); }
+    if (c.real) { updateRealBody(c, dt); }
+  }
+}
 function initNPCs() {
   G.crowd = new Crowd(MAX_NPC);
   const r = mulberry(4242);
@@ -4152,7 +4457,8 @@ function initNPCs() {
   let slot = 0;
   for (const s of staffSpots) {
     const app = BARTENDER_APP(r); if (s.kind === 'dj') { app.acc = 5; app.accColor = 2; app.top = 0; app.topColor = 4; }
-    const c = new Char(app, { seed: r() * 100 }); c.setAnim('bartend');
+    const c = new Char(app, { seed: r() * 100 }); c.setAnim('bartend'); c.staff = true;
+    const crew = CREW_LOOKS[s.kind === 'dj' ? 'dj' : 'bartend']; c.plook = crew[slot % crew.length];
     c.rig.root.position.set(s.x, s.y, s.z); c.rig.root.rotation.y = s.ry;
     G.crowd.assign(slot++, c); Staff.push({ c, spot: s });
   }
@@ -4169,6 +4475,7 @@ function initNPCs() {
 class NPC {
   constructor(i, r) {
     this.i = i; this.app = randomAppearance(r); this.ch = new Char(this.app, { seed: r() * 100 });
+    this.ch.plook = NPC_LOOKS[i % NPC_LOOKS.length];
     this.ch.idleStyle = Math.floor(r() * 3); this.ch.danceStyle = Math.floor(r() * 6); this.ch.var = r() < 0.5 ? 1 : 0;
     this.name = NPC_NAMES[i % NPC_NAMES.length];
     this.level = r() < 0.2 ? 'garden' : r() < 0.08 ? 'bow' : 'd15';
@@ -4442,6 +4749,7 @@ function updateNPCs(dt) {
   for (const s of Staff) { s.c.beat = Audio.beat(); s.c.update(dt, G.time); }
   if (G.captain.rig.root.visible) { G.captain.update(dt, G.time); }
   G.crowd.sync();
+  updateRealCrowd(dt);
 }
 function nearestNPC(p, maxD) {
   let best = null, bd = maxD;
@@ -6295,14 +6603,14 @@ function readRemote(p) {
     else if (t > R.sayT && x && (!publicChatOnly() || QUICK_SAYS.includes(x))) { R.sayT = t; R.pendingSay = x; }
   }
   R.cabin = typeof pr.c === 'string' ? pr.c.slice(0, 900) : '';
-  R.av = typeof pr.av === 'string' && avatarDef(pr.av) ? pr.av : '';
+  R.look = typeof cleanLook === 'function' ? cleanLook(pr.rl) : null;
   R.triv = pr.tv && typeof pr.tv === 'object' ? { s: num(pr.tv.s, 0, 99999) | 0, t: num(pr.tv.t, 0, 1e15) } : null;
   if (!R.seen) { R.pos.copy(R.tpos); R.yaw = R.tyaw; }
   R.seen = performance.now();
 }
 function dropRemote(peer) {
   const R = Net.remotes.get(peer); if (!R) return;
-  if (R.ch) { G.scene.remove(R.ch.rig.root); if (R.ch.real) R.ch.real.dispose(); R.ch.realId = 'gone'; } if (R.tag) R.tag.remove();
+  if (R.ch) { G.scene.remove(R.ch.rig.root); if (R.ch.real) R.ch.real.dispose(); R.ch.realKey = 'gone'; } if (R.tag) R.tag.remove();
   Net.remotes.delete(peer);
 }
 function myLoc() {
@@ -6338,7 +6646,7 @@ function netSend(dt) {
     p: [+r.position.x.toFixed(2), +r.position.y.toFixed(2), +r.position.z.toFixed(2)], r: +wrapAngle(r.rotation.y).toFixed(2),
     m: NET_ANIMS.has(c.anim) ? c.anim : 'idle', s: +(c.speed || 0).toFixed(1), d: c.danceStyle | 0, st: +(c.seat || 0.8).toFixed(2),
     h: NET_HELD.has(c.held) ? c.held : null, hc: Food.held && FOOD[Food.held] && FOOD[Food.held].color ? FOOD[Food.held].color : null,
-    say: Net.say, c: Net.cabin, av: A.av && avatarDef(A.av) ? A.av : undefined, tv: Trivia.active || G.profile.triviaBest ? { s: Trivia.active ? Trivia.score : (G.profile.triviaBest || 0), t: Date.now() } : null
+    say: Net.say, c: Net.cabin, rl: A.real && typeof cleanLook === 'function' ? cleanLook(A.real) || undefined : undefined, tv: Trivia.active || G.profile.triviaBest ? { s: Trivia.active ? Trivia.score : (G.profile.triviaBest || 0), t: Date.now() } : null
   };
   const js = JSON.stringify(pres); if (js === Net.last) return; Net.last = js;
   Net.room.presence(pres).catch(() => { });
@@ -6352,8 +6660,8 @@ function updateRemotes(dt) {
   vis.forEach((R, i) => {
     if (i >= 20) { if (R.ch) { R.ch.rig.root.visible = false; if (R.ch.real) R.ch.real.holder.visible = false; } if (R.tag) R.tag.style.display = 'none'; return; }
     const key = JSON.stringify(R.app);
-    if (!R.ch || R.appKey !== key) { if (R.ch) { G.scene.remove(R.ch.rig.root); if (R.ch.real) R.ch.real.dispose(); R.ch.realId = 'gone'; } R.ch = new Char(R.app, { seed: Math.random() * 100 }); R.ch.look = 0.4; buildCharMesh(R.ch); G.scene.add(R.ch.rig.root); R.appKey = key; R.pos.copy(R.tpos); R.yaw = R.tyaw; R.heldKey = ''; }
-    if ((R.ch.realId || '') !== (R.av || '')) setRealBody(R.ch, R.av, G.scene, ...avTints(R.app));
+    if (!R.ch || R.appKey !== key) { if (R.ch) { G.scene.remove(R.ch.rig.root); if (R.ch.real) R.ch.real.dispose(); R.ch.realKey = 'gone'; } R.ch = new Char(R.app, { seed: Math.random() * 100 }); R.ch.look = 0.4; buildCharMesh(R.ch); G.scene.add(R.ch.rig.root); R.appKey = key; R.pos.copy(R.tpos); R.yaw = R.tyaw; R.heldKey = ''; }
+    const lk = R.look ? JSON.stringify(R.look) : ''; if (R.ch.lookKey !== lk) { R.ch.lookKey = lk; setRealBody(R.ch, R.look, G.scene, { size: 512, normals: false }); }
     const c = R.ch; c.rig.root.visible = true;
     if (R.pos.distanceToSquared(R.tpos) > 64) R.pos.copy(R.tpos); else R.pos.lerp(R.tpos, 1 - Math.exp(-10 * dt));
     R.yaw = dampAngle(R.yaw, R.tyaw, 10, dt);
@@ -6475,7 +6783,18 @@ const KIND_ICON = { lounge: 'bed', sit: 'seat', bar: 'glass', shop: 'cone', slid
 /* ---------- profile ---------- */
 function saveProfile() { if (!G.profile) return; G.profile.clock = { min: Clock.min, day: Clock.day }; Store.set('profile', G.profile); }
 function newProfile(name) {
-  return { name, app: randomAppearance(), stamps: [], visited: [], slides: [], created: Date.now(), cabin: String(10000 + Math.floor(Math.random() * 7000 + 1000)).slice(0, 5) };
+  const app = randomAppearance(); if (typeof randomLook === 'function') app.real = randomLook();
+  return { name, app, stamps: [], visited: [], slides: [], created: Date.now(), cabin: String(10000 + Math.floor(Math.random() * 7000 + 1000)).slice(0, 5) };
+}
+function loadProfile() {
+  const stored = Store.get('profile', {}), pr = Object.assign(newProfile('Passenger'), stored);
+  if (!stored.app) return pr;
+  // the realistic-look field is only kept if the saved profile has one; fantasy avatars from the last version become the photo look
+  pr.app = stored.app;
+  if (pr.app.av && !pr.app.real && typeof PHOTO_LOOK === 'object') pr.app.real = { ...PHOTO_LOOK };
+  delete pr.app.av;
+  if (pr.app.real && typeof cleanLook === 'function') pr.app.real = cleanLook(pr.app.real) || undefined;
+  return pr;
 }
 
 /* ---------- toasts, action, mode bar ---------- */
@@ -6637,6 +6956,7 @@ function settingsSheet() {
   sheet('Settings', G.profile.name + ' · Cabin ' + G.profile.cabin, `
     <div class="row"><label>Graphics<small>Ultra adds sharper shadows and more passengers</small></label>${seg('sQ', [['battery', 'Battery'], ['high', 'High'], ['ultra', 'Ultra']], q)}</div>
     <div class="row"><label>Look<small>Next-Gen (High and Ultra) adds contact shadows, sun glare, a film grade and photo-mode depth of field</small></label>${seg('sNG', [[1, 'Next-Gen'], [0, 'Classic']], S.ng === false ? 0 : 1)}</div>
+    <div class="row"><label>Passengers<small>Realistic people near you (High and Ultra); the crowd further away stays light</small></label>${seg('sPeople', [[1, 'Realistic'], [0, 'Classic']], S.people === false ? 0 : 1)}</div>
     <div class="row"><label for="sMusic">Music</label><input type="range" id="sMusic" min="0" max="1" step="0.05" value="${S.music}"></div>
     <div class="row"><label>Ship radio<small>Your songs at the party venues</small></label>${seg('sRadio', [[1, 'On'], [0, 'Off']], S.radio === false ? 0 : 1)}</div>
     <div class="row"><label for="sSfx">Sound effects</label><input type="range" id="sSfx" min="0" max="1" step="0.05" value="${S.sfx}"></div>
@@ -6647,9 +6967,10 @@ function settingsSheet() {
     <button class="menu-item" id="sOut">Sign out<small>Return to the boarding pass</small></button>
     <p class="kbd">${IS_TOUCH ? 'Drag the left side to walk, drag the right side to look, pinch to zoom.' : 'WASD to walk · Shift to run · Space to jump · E to interact · F to eat or drink · Q for emotes · T to chat · M map · P program · C camera · drag to look · scroll to zoom'}</p>
     <p class="kbd">TILEO Cruise Lines and the Tileo Infinity are fictional. Your passenger profile is stored only in this browser.</p>
-    <p class="kbd">Realistic avatars and their animations: Mixamo characters (Michelle, Vanguard, X Bot) from the three.js examples.</p>`, body => {
+    <p class="kbd">Realistic people: Microsoft Rocketbox avatar library (MIT license). Walk, run, idle and dance motion from Mixamo.</p>`, body => {
     body.querySelectorAll('#sQ button').forEach(b => b.onclick = () => { S.quality = b.dataset.v; Store.set('settings', S); applyQuality(b.dataset.v); settingsSheet(); });
     body.querySelectorAll('#sNG button').forEach(b => b.onclick = () => { S.ng = b.dataset.v === '1'; Store.set('settings', S); setupPost(); onResize(); settingsSheet(); });
+    body.querySelectorAll('#sPeople button').forEach(b => b.onclick = () => { S.people = b.dataset.v === '1'; Store.set('settings', S); settingsSheet(); });
     body.querySelectorAll('#sClock button').forEach(b => b.onclick = () => { Clock.rate = +b.dataset.v; S.clock = Clock.rate; Store.set('settings', S); settingsSheet(); });
     $('sMusic').oninput = e => { S.music = +e.target.value; Audio.musicVol = S.music; Store.set('settings', S); };
     body.querySelectorAll('#sRadio button').forEach(b => b.onclick = () => { S.radio = b.dataset.v === '1'; Store.set('settings', S); radioEnable(S.radio); settingsSheet(); });
@@ -6687,7 +7008,7 @@ function wireBoarding() {
   });
   $('continueBtn').onclick = () => {
     audioInit(); sfx('tick');
-    G.profile = Object.assign(newProfile('Passenger'), Store.get('profile', {}));
+    G.profile = loadProfile();
     if (G.profile.clock) { Clock.min = G.profile.clock.min; Clock.day = G.profile.clock.day; }
     startPlay(false);
   };
@@ -6725,10 +7046,10 @@ function enterCreator(fromGame) {
   $('boarding').hidden = true; $('hud').hidden = true; $('creator').hidden = false;
   if (!G.studio) buildStudio();
   G.studio.environment = Env.envRT ? Env.envRT.texture : null;
-  if (G.crChar) { G.studio.remove(G.crChar.rig.root); if (G.crChar.real) G.crChar.real.dispose(); G.crChar.realId = 'gone'; }
+  if (G.crChar) { G.studio.remove(G.crChar.rig.root); if (G.crChar.real) G.crChar.real.dispose(); G.crChar.realKey = 'gone'; }
   if (Player.char && Player.char.real) Player.char.real.holder.visible = false;
   G.crChar = new Char(G.profile.app, { seed: 2 }); G.crChar.look = 0.4; buildCharMesh(G.crChar); G.studio.add(G.crChar.rig.root);
-  setRealBody(G.crChar, G.profile.app.av, G.studio, ...avTints(G.profile.app));
+  setRealBody(G.crChar, G.profile.app.real, G.studio, { size: 1024, smile: 0.7 });
   $('boardBtn').textContent = fromGame ? 'Back to the ship' : 'Board the ship';
   renderCreator(); layoutCreator();
 }
@@ -6753,14 +7074,9 @@ function renderCreator() {
   const chips = (key, list, disabled) => `<div class="chips">${list.map((n, i) => `<button class="chip" data-k="${key}" data-v="${i}" aria-pressed="${app[key] === i}" ${disabled ? 'disabled style="opacity:.4"' : ''}>${n}</button>`).join('')}</div>`;
   const sw = (key, cols) => `<div class="swatches">${cols.map((c, i) => `<button class="sw" data-k="${key}" data-v="${i}" style="background:${c}" aria-pressed="${app[key] === i}" aria-label="Color ${i + 1}"></button>`).join('')}</div>`;
   let html = '';
-  const real = app.av && avatarDef(app.av);
-  if (crTab === 'Avatar') {
-    const card = (id, name, blurb) => `<button class="av-card" data-av="${id}" aria-pressed="${(app.av || 'classic') === id}"><b>${esc(name)}</b><small>${esc(blurb)}</small></button>`;
-    html = `<div class="opt-group"><h4>Style</h4><div class="av-grid">${card('classic', 'Classic', 'Fully customizable')}${AVATARS.map(a => card(a.id, a.name, a.blurb)).join('')}</div></div>`
-      + (real ? `<p class="kbd">${G.crChar && G.crChar.realLoading ? 'Loading the 3D model…' : 'Realistic avatars keep their own look. Hats, sunglasses, headphones and the lei from Extras still work.'}</p>` : `<p class="kbd">Realistic avatars are rigged 3D characters. Your classic look is saved if you switch back.</p>`)
-      + (real && real.tint ? `<div class="opt-group"><h4>Shell color</h4>${sw('topColor', OUTFIT)}</div><div class="opt-group"><h4>Joint color</h4>${sw('bottomColor', OUTFIT)}</div>` : '');
-  }
-  const classicNote = real && crTab !== 'Avatar' && crTab !== 'Extras' ? '<p class="kbd">These options style the classic avatar.</p>' : '';
+  const L = app.real && typeof cleanLook === 'function' ? cleanLook(app.real) : null, real = !!L;
+  if (crTab === 'Avatar') html = realLookPanel(L);
+  const classicNote = real && crTab !== 'Avatar' ? '<p class="kbd">These options style the classic avatar. Your realistic look is set on the Avatar tab.</p>' : '';
   if (crTab === 'Body') html = `<div class="name-row"><input id="crName" maxlength="18" value="${esc(G.profile.name)}" aria-label="Passenger name"></div>
     <div class="opt-group"><h4>Build</h4>${chips('body', BODIES)}</div>
     <div class="opt-group"><h4>Height</h4><div class="chips">${[['0.95', 'Shorter'], ['1', 'Average'], ['1.05', 'Taller']].map(([v, l]) => `<button class="chip" data-k="height" data-v="${v}" aria-pressed="${Math.abs(app.height - +v) < 0.026}">${l}</button>`).join('')}</div></div>`;
@@ -6770,9 +7086,21 @@ function renderCreator() {
     <div class="opt-group"><h4>Bottoms</h4>${chips('bottom', BOTTOMS, app.top === 4)}</div><div class="opt-group"><h4>Bottoms color</h4>${sw('bottomColor', OUTFIT)}</div><div class="opt-group"><h4>Shoes</h4>${sw('shoes', SHOE_COLORS)}</div>`;
   if (crTab === 'Extras') html = `<div class="opt-group"><h4>Accessory</h4>${chips('acc', ACCS)}</div><div class="opt-group"><h4>Accessory color</h4>${sw('accColor', ACC_COLORS)}</div>`;
   $('crBody').innerHTML = classicNote + html;
-  $('crBody').querySelectorAll('[data-av]').forEach(b => b.onclick = () => {
-    app.av = b.dataset.av === 'classic' ? undefined : b.dataset.av; sfx('tick'); refreshCreatorChar(); renderCreator();
-    if (app.av) { const c = G.crChar; const t = setInterval(() => { if (G.crChar !== c || !c.realLoading) { clearInterval(t); if (G.state === 'creator' && crTab === 'Avatar') renderCreator(); } }, 300); }
+  $('crBody').querySelectorAll('[data-rl]').forEach(b => b.onclick = () => {
+    const k = b.dataset.rl, v = b.dataset.v;
+    if (k === 'style') app.real = v === 'real' ? (app.lastReal || randomLook()) : (app.real ? (app.lastReal = app.real, undefined) : undefined);
+    else if (k === 'photo') app.real = { ...PHOTO_LOOK };
+    else if (k === 'sex') { if (!L || baseDef(L.b).sex !== v) app.real = randomLook(v); }
+    else if (L) {
+      const n = { ...L };
+      if (k === 'b') { n.b = v; if (n.f && baseDef(n.f).sex !== baseDef(v).sex) n.f = ''; }
+      else if (k === 'f') n.f = v === n.b ? '' : v;
+      else if (k === 'bd') n.bd = +v;
+      else n[k] = v;
+      app.real = cleanLook(n);
+    }
+    sfx('tick'); refreshCreatorChar(); renderCreator();
+    if (app.real) { const c = G.crChar; const t = setInterval(() => { if (G.crChar !== c || !c.realLoading) { clearInterval(t); if (G.state === 'creator' && crTab === 'Avatar') renderCreator(); } }, 300); }
   });
   $('crBody').querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
     const k = b.dataset.k; app[k] = k === 'height' ? +b.dataset.v : +b.dataset.v;
@@ -6781,16 +7109,38 @@ function renderCreator() {
   });
   const nm = $('crName'); if (nm) nm.oninput = () => { G.profile.name = nm.value.trim() || G.profile.name; };
 }
+function realLookPanel(L) {
+  const card = (k, v, name, blurb, on) => `<button class="av-card" data-rl="${k}" data-v="${v}" aria-pressed="${on}"><b>${esc(name)}</b>${blurb ? `<small>${esc(blurb)}</small>` : ''}</button>`;
+  const chip = (k, v, name, on) => `<button class="chip" data-rl="${k}" data-v="${v}" aria-pressed="${on}">${esc(name)}</button>`;
+  const sw = (k, cols, cur, extra) => `<div class="swatches">${cols.map(c => `<button class="sw" data-rl="${k}" data-v="${c}" style="background:${c}" aria-pressed="${cur === c}" aria-label="Color ${c}"></button>`).join('')}${extra || ''}</div>`;
+  let h = `<div class="opt-group"><h4>Style</h4><div class="av-grid">${card('style', 'real', 'Realistic', 'Lifelike 3D people', !!L)}${card('style', 'classic', 'Classic', 'Cartoon, fully customizable', !L)}</div></div>`;
+  if (!L) return h + '<p class="kbd">Your realistic look is kept if you switch back.</p>';
+  const b = baseDef(L.b), sex = b.sex, loading = G.crChar && G.crChar.realLoading;
+  h += `<div class="opt-group"><div class="av-grid">${card('photo', '1', 'From your photo', 'Captain cap, aviators, tank, tropical shorts', JSON.stringify(L) === JSON.stringify(cleanLook(PHOTO_LOOK)))}${card('sex', sex === 'm' ? 'f' : 'm', sex === 'm' ? 'Switch to woman' : 'Switch to man', '', false)}</div></div>`;
+  if (loading) h += '<p class="kbd">Loading the 3D model…</p>';
+  h += `<div class="opt-group"><h4>Outfit</h4><div class="chips">${LOOK_BASES[sex].map(([id, n]) => chip('b', id, n, L.b === id)).join('')}</div></div>`;
+  h += `<div class="opt-group"><h4>Face</h4><div class="faces">${LOOK_FACES[sex].map((id, i) => `<button class="face" data-rl="f" data-v="${id}" aria-pressed="${(L.f || L.b) === id}" aria-label="Face ${i + 1}" style="background-image:url(${PEOPLE_DIR}${id}_h.jpg)"></button>`).join('')}</div></div>`;
+  if (sex === 'm') h += `<div class="opt-group"><h4>Beard</h4><div class="chips">${[[0, 'None'], [30, 'Stubble'], [60, 'Short'], [90, 'Full']].map(([v, n]) => chip('bd', v, n, Math.abs((L.bd || 0) - v) < 15)).join('')}</div></div>`;
+  if (b.topRef) h += `<div class="opt-group"><h4>Top color</h4>${sw('t', LOOK_COLORS, L.t)}</div>`;
+  if (b.botRef) h += `<div class="opt-group"><h4>${L.b === 'mtrunks' || L.b === 'fbikini' ? 'Swimwear color' : 'Bottoms'}</h4>${sw('o', LOOK_COLORS, L.o, `<button class="sw print" data-rl="o" data-v="tropical" aria-pressed="${L.o === 'tropical'}" aria-label="Tropical print" style="background-image:url(${PEOPLE_DIR}print_tropical.jpg)"></button>`)}</div>`;
+  h += `<div class="opt-group"><h4>Hat</h4><div class="chips">${LOOK_HATS.map(([v, n]) => chip('h', v, n, L.h === v)).join('')}</div></div>`;
+  h += `<div class="opt-group"><h4>Glasses</h4><div class="chips">${LOOK_GLASSES.map(([v, n]) => chip('g', v, n, L.g === v)).join('')}</div></div>`;
+  return h;
+}
 function refreshCreatorChar() {
   const old = G.crChar; const c = new Char(G.profile.app, { seed: 2 }); c.p = old.p; c.anim = 'idle'; buildCharMesh(c);
   G.studio.remove(old.rig.root); G.studio.add(c.rig.root); G.crChar = c;
-  if (old.real && old.realId === G.profile.app.av) { c.real = old.real; c.realId = old.realId; old.real = null; c.real.tint(...avTints(G.profile.app)); }
-  else { if (old.real) old.real.dispose(); setRealBody(c, G.profile.app.av, G.studio, ...avTints(G.profile.app)); }
-  old.realId = 'gone';
+  if (old.real) { c.real = old.real; c.realKey = old.realKey; old.real = null; }
+  old.realKey = 'gone';
+  setRealBody(c, G.profile.app.real, G.studio, { size: 1024, smile: 0.7 });
   c.setAnim('wave'); setTimeout(() => { if (G.crChar === c) c.setAnim('idle'); }, 1300);
 }
 function wireCreator() {
-  $('randBtn').onclick = () => { const keepH = G.profile.app; G.profile.app = randomAppearance(); sfx('tick'); refreshCreatorChar(); renderCreator(); };
+  $('randBtn').onclick = () => {
+    const old = G.profile.app, wasReal = !!old.real;
+    G.profile.app = randomAppearance(); if (wasReal) G.profile.app.real = randomLook();
+    sfx('tick'); refreshCreatorChar(); renderCreator();
+  };
   $('boardBtn').onclick = () => { sfx('tick'); saveProfile(); startPlay(!G.creatorFromGame); };
 }
 
@@ -6891,7 +7241,7 @@ function stepFrame(dt, noRender) {
   if (perfT > 3) {
     const avg = perfAcc / perfN; perfAcc = 0; perfN = 0; perfT = 0;
     if (avg > 0.042 && (G.prScale || 1) > 0.6 && G.state !== 'loading') { G.prScale = (G.prScale || 1) - 0.15; G.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, G.quality.pr * G.prScale)); onResize(); }
-    else if (avg > 0.045 && G.state === 'play' && typeof nextGenSlow === 'function') nextGenSlow();
+    else if (avg > 0.045 && G.state === 'play' && typeof nextGenSlow === 'function' && !nextGenSlow()) { if ((G.peopleCap == null ? 99 : G.peopleCap) > 4) G.peopleCap = 4; }
   }
 }
 
@@ -6929,7 +7279,7 @@ async function boot(restore) {
     setLoad(1, 'All aboard');
     $('loading').style.transition = 'opacity .6s'; $('loading').style.opacity = '0'; setTimeout(() => $('loading').hidden = true, 650);
     if (restore && restore.state === 'play' && Store.get('profile', null)) {
-      G.profile = Object.assign(newProfile('Passenger'), Store.get('profile', {}));
+      G.profile = loadProfile();
       if (restore.clock) { Clock.min = restore.clock; Clock.day = restore.day || 1; }
       G.restore = restore; G.state = 'boarding'; startPlay(false);
     } else showBoarding();
@@ -6940,7 +7290,7 @@ async function boot(restore) {
   }
 }
 window.TILEO_DEBUG = { G, World, Env, Player, Clock, NPCS, Audio, Cam, T, Input, setClock, travelTo, applyQuality, actSlide, actZip, actHoops, actDance, enterPhoto, takePhoto, openSheet, startPlay, stamp, onActionPressed, scanHotspots,
-  AVATARS, setRealBody, initPlayer, enterCreator, setupPost, nextGenOn, NG, saveProfile, goAshore, returnToShip, enterSuite, startDecorate, openSlots, openBlackjack, openRoulette, startTrivia, answerTrivia, actSurf, actGolf, consume, giveFood, openMenu, Net, Radio, Suite, Food, Trivia, GOLF, PORTS, closePanel, endActivity, netSay, readRemote, myLayout, showSuite,
+  PEOPLE_BASES, PHOTO_LOOK, randomLook, cleanLook, setRealBody, initPlayer, NPCS, Staff, enterCreator, setupPost, nextGenOn, NG, saveProfile, goAshore, returnToShip, enterSuite, startDecorate, openSlots, openBlackjack, openRoulette, startTrivia, answerTrivia, actSurf, actGolf, consume, giveFood, openMenu, Net, Radio, Suite, Food, Trivia, GOLF, PORTS, closePanel, endActivity, netSay, readRemote, myLayout, showSuite,
   sim(n, dt = 1 / 30) { for (let i = 0; i < n; i++) stepFrame(dt, true); return Player.pos.toArray().map(v => +v.toFixed(2)); },
   render() { stepFrame(1 / 60); } };
 requestAnimationFrame(loop);
