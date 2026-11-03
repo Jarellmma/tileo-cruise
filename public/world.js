@@ -1,12 +1,12 @@
 // The Strip: road, sidewalks, parody lookalike landmarks (procedural PBR architecture), Tileo Kingdom tower
 import * as THREE from 'three';
 import { Water } from 'three/addons/objects/Water.js';
-import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, chromeM, canvas, tex, logoMaterial, logoReady, LOGOS , pbr } from './core.js?v=1793694552';
-import { makeLion, makeCharacter, randomLook, animate } from './characters.js?v=1793694552';
-import { STY, facade, roofMat, rect, circle, arcBand, stadium, inset, Batch, streetTex, palms as palmKit, carKitGeo } from './city.js?v=1793694552';
-import { carParts, carMats } from './cars.js?v=1793694552';
-import { buildGrounds } from './landscape.js?v=1793694552';
-import { Q } from './quality.js?v=1793694552';
+import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, chromeM, canvas, tex, logoMaterial, logoReady, LOGOS , pbr } from './core.js?v=1793739721';
+import { makeLion, makeCharacter, randomLook, animate } from './characters.js?v=1793739721';
+import { STY, facade, roofMat, rect, circle, arcBand, stadium, inset, Batch, streetTex, palms as palmKit, carKitGeo } from './city.js?v=1793739721';
+import { carParts, carMats } from './cars.js?v=1793739721';
+import { buildGrounds } from './landscape.js?v=1793739721';
+import { Q } from './quality.js?v=1793739721';
 
 export function facadeMat(color, w, h, d, lit = 0xffd98f, nightI = 1) {
   const mk = (rx) => { const m = new THREE.MeshStandardMaterial({ color, map: rep(T.facade, rx / 6, h / 5), emissive: lit, emissiveMap: rep(T.facadeE, rx / 6, h / 5), emissiveIntensity: nightI, roughness: 0.55, metalness: 0.2 });
@@ -106,7 +106,7 @@ export function buildStrip(A) {
     b.prism(mechM, roof, ip, y, y + mh); b.prism(railM, null, offsetPoly(ip, 0.25), y + mh - 1.6, y + mh + 0.4, { cap: false }); if (R2() < 0.4) b.box(railM, ip[0][0] * 0.5 + ip[2 % ip.length][0] * 0.5, y + mh, ip[0][1] * 0.5 + ip[2 % ip.length][1] * 0.5, 0.25, 6 + R2() * 8, 0.25); return y + mh; };
   const TOWER_NAMES = ['THE MERIDIAN', 'PALM ROYALE', 'DESERT ROSE', 'GOLDEN MILE', 'NOVA', 'THE SAPPHIRE', 'CASA ARENA', 'STARLIGHT', 'THE ORCHID', 'SILVER CROWN', 'MONARCH', 'LA PERLA'];
   let towerNames = 0; const plazaPalms = [];
-  const canopyM = M(0x24252a, { roughness: 0.45, metalness: 0.6 }), downlight = neon(0xffe3b8, {}, 0.25, 2.2);
+  const canopyM = M(0x24252a, { roughness: 0.45, metalness: 0.6 }), downlight = neon(0xffe3b8, {}, 0.25, 1.05);
   const plazaM = pbr('travertine', 4 / 2.4, 4 / 2.4, { color: 0xb3aca2, macro: [0.05, 0.15] }), planterM = pbr('gravel', 0.5, 0.5, { color: 0x9a8a78 });
   const band = (b, mat, pts, y, h, k = 1.006) => b.prism(mat, null, inset(pts, k), y, y + h, { cap: false });
   const cap = (b, mat, pts, y, h, k = 1.02) => b.prism(mat, mat, inset(pts, k), y, y + h);
@@ -154,7 +154,7 @@ export function buildStrip(A) {
     const arm = new THREE.BoxGeometry(3.2, 0.14, 0.14); arm.translate(-1.6, 10.8, 0); const hd = new THREE.BoxGeometry(1.1, 0.24, 0.5); hd.translate(-3.1, 10.7, 0);
     const lampG = mergeG([pole, arm, hd]); const bulbG = new THREE.BoxGeometry(0.9, 0.05, 0.38); bulbG.translate(-3.1, 10.56, 0);
     const pts = []; for (let z = -630; z <= 630; z += 36) { if (CROSS.some(c => Math.abs(z - c) < 12)) continue; pts.push([14.9, z, 0], [-14.9, z + 18, PI], [0.4, z + 9, PI], [-0.4, z + 9, 0]); }
-    const n = pts.length, lamp = new THREE.InstancedMesh(lampG, M(0x2a2c30, { roughness: 0.45, metalness: 0.7 }), n), bulb = new THREE.InstancedMesh(bulbG, neon(0xfff0d0, {}, 0.6, 3.2), n);
+    const n = pts.length, lamp = new THREE.InstancedMesh(lampG, M(0x2a2c30, { roughness: 0.45, metalness: 0.7 }), n), bulb = new THREE.InstancedMesh(bulbG, neon(0xfff0d0, {}, 0.6, 2.3), n);
     const pool = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-PI / 2), new THREE.MeshBasicMaterial({ map: S.pool, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffe2b0 }), n);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), s1 = new THREE.Vector3(1, 1, 1), s2 = new THREE.Vector3(13, 1, 13);
     pts.forEach(([x, z, ry], i) => { q.setFromAxisAngle(UP, ry); m4.compose(v.set(x, 0, z), q, s1); lamp.setMatrixAt(i, m4); bulb.setMatrixAt(i, m4);
@@ -177,7 +177,7 @@ export function buildStrip(A) {
     const ridge = neon(0xbfe8ff, {}, 0.5, 2.0); for (const [px, pz] of pyrPts) bar(b, ridge, px, 0, pz, x, 95, z, 0.28, 5);
     for (const [px, pz] of rect(x, z, 101.5, 101.5)) b.box(black, px, 0, pz, 3, 3, 3);
     b.geo(gold, new THREE.ConeGeometry(Math.SQRT2 * 2.2, 3.5, 4, 1).rotateY(PI / 4), x, 95.5, z);
-    b.prism(stone, stone, rect(x + 50, z, 6, 22), 0, 9); b.prism(gold, null, rect(x + 50.2, z, 6.2, 22.2), 9, 9.6, { cap: false }); b.box(glow(0xffe0a0, 0xffc060, 0.3, 1.5), x + 53.1, 0, z, 0.2, 6.5, 10); // portal
+    b.prism(stone, stone, rect(x + 50, z, 6, 22), 0, 9); b.prism(gold, null, rect(x + 50.2, z, 6.2, 22.2), 9, 9.6, { cap: false }); b.box(glow(0x6a4a24, 0xb07a34, 0.1, 0.42), x + 53.1, 0, z, 0.2, 6.5, 10); // portal (warm doorway, kept below bloom)
     // sphinx (facing the Strip)
     const sx = -42, sand = M(0xd2b882, { roughness: 0.85 }), sandD = M(0xb89a64, { roughness: 0.9 });
     b.prism(sand, sand, stadium(sx - 6, z, 20, 9), 0, 6.5); b.prism(sandD, sandD, rect(sx - 6, z, 22, 11), 0, 1.2);
@@ -195,7 +195,7 @@ export function buildStrip(A) {
     sign('LUXE PYRAMID', '#7fd8ff', -25, z - 20); landmark('Luxe Pyramid', x, z); }
 
   // ===================== Emerald City Grand (east) =====================
-  { const x = 95, z = 380, b = new Batch(), em = neon(0x4dff9a, {}, 0.6, 1.8);
+  { const x = 95, z = 380, b = new Batch(), em = neon(0x4dff9a, {}, 0.6, 1.35);
     const main = stadium(102, z, 46, 22, PI / 2); T0(b, 'emerald', main, 10, 100); band(b, em, main, 99.4, 0.6); T0(b, 'emerald', inset(main, 0.84), 100, 108); band(b, em, inset(main, 0.84), 107.4, 0.6); roofKit(b, inset(main, 0.84), 108);
     for (const [dz, ry] of [[-36, 0.55], [36, -0.55]]) { const w = stadium(112, z + dz, 38, 20, PI / 2 + ry); T0(b, 'emerald', w, 10, 84); band(b, em, w, 83.4, 0.6); roofKit(b, w, 84); }
     solid(86, 124, z - 56, z + 56);
@@ -231,14 +231,14 @@ export function buildStrip(A) {
     const lkPts = rect((lake.x0 + lake.x1) / 2, z, lake.x1 - lake.x0, lake.z1 - lake.z0); b.prism(ivory, ivory, inset(lkPts, 1.02), 0, 0.5); // coping ring (filled; water sits on top)
     const balG = (x0, z0, x1, z1) => { const L = Math.hypot(x1 - x0, z1 - z0); const pg = new THREE.PlaneGeometry(L, 1.1); const uv = pg.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * L / 2); b.geo(balM, pg, (x0 + x1) / 2, 1.05, (z0 + z1) / 2, 1, 1, 1, -Math.atan2(z1 - z0, x1 - x0)); b.box(ivory, (x0 + x1) / 2, 1.55, (z0 + z1) / 2, Math.abs(x1 - x0) + 0.4, 0.15, Math.abs(z1 - z0) + 0.4); };
     balG(lake.x1 + 0.6, lake.z0, lake.x1 + 0.6, lake.z1); balG(lake.x0, lake.z0 - 0.6, lake.x1 + 0.6, lake.z0 - 0.6); balG(lake.x0, lake.z1 + 0.6, lake.x1 + 0.6, lake.z1 + 0.6);
-    const lantern = neon(0xffd9a0, {}, 0.7, 2.4); for (let zz = lake.z0; zz <= lake.z1; zz += 12) { b.cyl(black, lake.x1 + 0.6, 0.5, zz, 0.12, 4.2, 6); sphere(b, lantern, lake.x1 + 0.6, 4.9, zz, 0.35, 0.45, 0.35, 8); }
+    const lantern = neon(0xffd9a0, {}, 0.7, 1.6); for (let zz = lake.z0; zz <= lake.z1; zz += 12) { b.cyl(black, lake.x1 + 0.6, 0.5, zz, 0.12, 4.2, 6); sphere(b, lantern, lake.x1 + 0.6, 4.9, zz, 0.35, 0.45, 0.35, 8); }
     b.flush(g); solid(lake.x0, lake.x1 + 1, lake.z0 - 1, lake.z1 + 1);
     makeWater(g, lake.x1 - lake.x0, lake.z1 - lake.z0, (lake.x0 + lake.x1) / 2, 0.42, z, { color: 0x0f4e66, size: 2.5 });
     fountain(A, g, lake, z);
     facadeSign('BELLISSIMO', '#ffe08a', -111.2, 10, z, 30, 4, -1); sign('BELLISSIMO', '#ffe08a', -25, z + 70); landmark('Bellissimo', -90, z); }
 
   // ===================== Flamingo Pink (east) =====================
-  { const x = 90, z = 120, b = new Batch(), pk = neon(0xff4fa8, {}, 0.7, 2.0);
+  { const x = 90, z = 120, b = new Batch(), pk = neon(0xff4fa8, {}, 0.7, 1.5);
     const slab = stadium(x, z, 70, 24, PI / 2); T0(b, 'pink', slab, 14, 72); band(b, pk, slab, 71.4, 0.6); band(b, pk, slab, 40, 0.4); roofKit(b, slab, 72, 3);
     const pod = rect(66, z, 24, 76, 0, 3); T0(b, 'pink', pod, 0, 14, { roof: M(0x5a2a40) }); band(b, pk, pod, 13.4, 0.6, 1.01); band(b, pk, pod, 4, 0.3, 1.01);
     // neon feather fan on the tower face
@@ -247,7 +247,7 @@ export function buildStrip(A) {
     sphere(b, gold, 77.4, 24, z, 1.2);
     b.flush(g); solid(78, 102, z - 35, z + 35); solid(54, 78, z - 38, z + 38);
     // neon flamingo on the podium roof
-    { const f = new THREE.Group(), pm = neon(0xff6ec7, {}, 0.8, 2.2); f.position.set(62, 14, z + 22); f.rotation.y = -PI / 2; g.add(f);
+    { const f = new THREE.Group(), pm = neon(0xff6ec7, {}, 0.8, 1.6); f.position.set(62, 14, z + 22); f.rotation.y = -PI / 2; g.add(f);
       const bodyM = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), pm); bodyM.scale.set(2.2, 1.4, 4); bodyM.position.set(0, 7, 0); f.add(bodyM);
       const neck = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 8, 3), new THREE.Vector3(0, 11, 5), new THREE.Vector3(0, 13.5, 3.2), new THREE.Vector3(0, 15.5, 4.5)]);
       f.add(new THREE.Mesh(new THREE.TubeGeometry(neck, 24, 0.45, 8), pm)); const hd = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 8), pm); hd.position.set(0, 15.8, 4.8); f.add(hd);
@@ -311,7 +311,7 @@ export function buildStrip(A) {
     for (let k = 0; k < 3; k++) { const gd = new THREE.Group(); const hull = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 6), gm); hull.scale.set(0.7, 0.35, 5); hull.position.y = 0.5; gd.add(hull);
       for (const s of [-1, 1]) { const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.12, 1.8, 5), gm); tip.position.set(0, 1.2, s * 4.7); tip.rotation.x = s * 0.35; gd.add(tip); }
       const seat = new THREE.Mesh(G.box, M(0xb0102a)); seat.scale.set(0.9, 0.3, 1.4); seat.position.y = 0.8; gd.add(seat);
-      const gond = makeCharacter({ skin: '#d9a47c', hair: '#1a1209', outfit: '#ffffff', style: 'solid', status: 'single' }); gond.scale.setScalar(0.95); gond.position.set(0, 0.6, -3.2); gd.add(gond);
+      const gond = makeCharacter({ skin: '#d9a47c', hair: '#1a1209', outfit: '#ffffff', style: 'solid' }); gond.scale.setScalar(0.95); gond.position.set(0, 0.6, -3.2); gd.add(gond);
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 4, 5), M(0x6a4a2a)); pole.position.set(0.5, 1.6, -2.8); pole.rotation.x = 0.5; gd.add(pole);
       gd.position.set(36 + k * 6, 0, z - 40 + k * 30); g.add(gd); gondolas.push({ gd, v: k % 2 ? 1.6 : -1.6, gond, x: 36 + k * 6 }); }
     A.anim.push((t, dt) => gondolas.forEach(o => { o.gd.position.z += o.v * dt; if (o.gd.position.z > z + 42 || o.gd.position.z < z - 42) o.v *= -1; o.gd.rotation.y = o.v > 0 ? 0 : PI; o.gd.position.y = Math.sin(t * 1.5 + o.x) * 0.05 + 0.05; animate(o.gond, t, 0); }));
@@ -469,7 +469,7 @@ function fountain(A, g, lake, z) {
 function buildTileo(A, solid, sign, pb) {
   const g = A.group, cx = 100, cz = -330, b = new Batch();
   const black = M(0x0e0d0c, { roughness: 0.3, metalness: 0.5 }), gold = goldM(0.45, 0.25), tiger = glow(0xffffff, 0xff8a00, 0.0, 0.7, { map: rep(T.tiger, 1 / 6, 1 / 2.6), emissiveMap: rep(T.tiger, 1 / 6, 1 / 2.6), roughness: 0.45 });
-  const goldLED = neon(0xffc04a, {}, 0.6, 1.5);
+  const goldLED = neon(0xffc04a, {}, 0.6, 1.25);
   const plaza = new THREE.Mesh(new THREE.PlaneGeometry(56, 110), pbr('marble', 56 / 2.4, 110 / 2.4, { color: 0x1c1816, metalness: 0.2 })); plaza.material.color.setHex(0x3a3430);
   plaza.rotation.x = -PI / 2; plaza.position.set(50, 0.06, cz); plaza.receiveShadow = true; g.add(plaza);
   const ts = plane(g, STD({ map: rep(T.tiger, 1, 6), roughness: 0.6 }), 46, 0.08, cz, 6, 70); ts.receiveShadow = true; // tiger drive stripe
@@ -492,7 +492,7 @@ function buildTileo(A, solid, sign, pb) {
   for (const [bx, bz, br] of [[cx - 18.75, cz, -PI / 2], [cx, cz + 20.75, 0]]) logoPlane(g, 'dj', bx, 95, bz, 30, br, { back: 0x0b0906, pad: 0.1 });
   const crestLight = new THREE.PointLight(0xffb030, 0, 90, 1.2); crestLight.position.set(cx - 25, 215, cz); g.add(crestLight); onNight(n => crestLight.intensity = n ? 40 : 0);
   // entrance: doors, canopy, lion statues
-  b.box(glow(0xffe0a0, 0xffc060, 0.3, 0.9), cx - 25.3, 0, cz, 0.4, 7, 12); b.box(gold, cx - 25.4, 7, cz, 0.6, 0.6, 13);
+  b.box(glow(0x6a4a24, 0xb07a34, 0.1, 0.45), cx - 25.3, 0, cz, 0.4, 7, 12); b.box(gold, cx - 25.4, 7, cz, 0.6, 0.6, 13);
   b.box(gold, 64, 8, cz, 20, 0.8, 26); b.box(goldLED, 64, 7.85, cz, 19.4, 0.12, 25.4); for (const zz of [-12, 12]) for (const xx of [56, 70]) b.cyl(gold, xx, 0, cz + zz, 0.4, 8, 12);
   const canLight = new THREE.PointLight(0xffd090, 0, 30, 1.5); canLight.position.set(64, 6.5, cz); g.add(canLight); onNight(n => canLight.intensity = n ? 22 : 0);
   // entrance sign: resort logo over the canopy, flanked by name panels

@@ -3,13 +3,13 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { G, M, add, box, cyl, T, PI, glow, logoPlane } from './core.js?v=1793694552';
-import { Q } from './quality.js?v=1793694552';
-import { realLook, buildRealBody, retexture, srcBind, setTigerSource, warmPeople, FACES as RFACES, BODIES } from './people.js?v=1793694552';
-import { PEOPLE_BASES } from './people_data.js?v=1793694552';
-import { carParts, carMats } from './cars.js?v=1793694552';
+import { G, M, add, box, cyl, T, PI, glow, logoPlane } from './core.js?v=1793739721';
+import { Q } from './quality.js?v=1793739721';
+import { realLook, buildRealBody, retexture, srcBind, setTigerSource, warmPeople, FACES as RFACES, BODIES } from './people.js?v=1793739721';
+import { PEOPLE_BASES } from './people_data.js?v=1793739721';
+import { carParts, carMats } from './cars.js?v=1793739721';
 
-export const STATUS = { single: { c: '#f5c542', n: 'Single' }, couple: { c: '#ff7a1a', n: 'Couple' }, curious: { c: '#b46cff', n: 'Curious' } };
+export const BAND_C = '#e0b24a'; // the TILEO KINGDOM guest wristband (gold); guests get one at check-in
 export const STYLES = {
   solid: { n: 'Classic', price: 0 },
   swim: { n: 'Resort Swimwear', price: 150 },
@@ -50,7 +50,7 @@ function applyProcLook(ch, look) {
   u.legL.userData.mesh.material = u.legR.userData.mesh.material = st === 'swim' ? m.skin : m.bottom;
   u.torso.scale.y = st === 'swim' ? 0.42 : 0.62; u.torso.position.y = st === 'swim' ? 1.28 : 1.38;
   m.top.needsUpdate = m.bottom.needsUpdate = true;
-  if (look.status) m.band.color.set(STATUS[look.status].c);
+  m.band.color.set(BAND_C);
   u.band.visible = !!look.banded;
   u.hair.scale.set(0.23, look.hairLong ? 0.3 : 0.22, 0.23);
 }
@@ -76,7 +76,7 @@ export function randomLook(R) {
   const pick = a => a[Math.floor(R() * a.length)];
   const body = R() < 0.5 ? 'f' : 'm';
   const FIX = { m: ['malea04', 'malea08', 'malea09', 'malea12', 'malea16', 'malea17'], f: ['femalep02', 'sportsf02', 'femalea03', 'femalea12'] };
-  const L = { skin: pick(skins), hair: pick(hairs), outfit: pick(outfits), style: pick(styles), hairLong: R() < 0.5, body, hairStyle: pick(HAIRSTYLES[body]), beard: body === 'm' && R() < 0.35, status: pick(Object.keys(STATUS)), banded: true,
+  const L = { skin: pick(skins), hair: pick(hairs), outfit: pick(outfits), style: pick(styles), hairLong: R() < 0.5, body, hairStyle: pick(HAIRSTYLES[body]), beard: body === 'm' && R() < 0.35, banded: true,
     face: pick(RFACES[body]), seed: Math.floor(R() * 1e6), glasses: R() < 0.22 ? pick(['aviator', 'round']) : '' };
   if (L.style === 'solid' && R() < 0.45) L.fixed = pick(FIX[body]);
   return L;
@@ -226,7 +226,7 @@ function setRigLook(ch, look) {
   const wantBeard = r.sex === 'm' && !!look.beard;
   if (wantBeard && !r.beard) { r.beard = rebind(RIG.hair.beard, r.bones, r.hair.material); r.body.parent.add(r.beard); }
   if (r.beard) { r.beard.visible = wantBeard; r.beard.material = r.hair.material; }
-  r.band.visible = !!look.banded; if (look.status) { r.bandMat.color.set(STATUS[look.status].c); r.bandMat.emissive.set(STATUS[look.status].c).multiplyScalar(0.35); }
+  r.band.visible = !!look.banded; r.bandMat.color.set(BAND_C); r.bandMat.emissive.set(BAND_C).multiplyScalar(0.35);
   r.lod_ = -1; // force visibility refresh
 }
 function setLod(ch, lod, real) {
@@ -410,13 +410,13 @@ function wantReal(ch, u, lod) {
 function realOpts(u) { const hi = Q.key === 'high'; return u.important ? { size: Q.key === 'low' ? 512 : 1024, normals: Q.key !== 'low', hideHead: !!u.hideRealHead, smile: 0.55 } : { size: 512, normals: hi, smile: 0.35 + Math.random() * 0.4 }; }
 function ensureReal(ch) {
   const u = ch.userData, r = u.rig; if (!r) return; const L = realLook({ ...u.look, body: r.sex });
-  if (u.real && u.real.base === L.b) { const R = u.real; R.L = L; if (R.rb) { retexture(R.rb, L, realOpts(u)).catch(() => {}); if ((R.rb.L.g || '') !== (L.g || '')) R.rb.setGlasses(L.g); R.rb.L = L; R.rb.setBand(u.look.banded && u.look.status ? STATUS[u.look.status].c : null); r.lod_ = -1; } return; }
+  if (u.real && u.real.base === L.b) { const R = u.real; R.L = L; if (R.rb) { retexture(R.rb, L, realOpts(u)).catch(() => {}); if ((R.rb.L.g || '') !== (L.g || '')) R.rb.setGlasses(L.g); R.rb.L = L; R.rb.setBand(u.look.banded ? BAND_C : null); r.lod_ = -1; } return; }
   if (u.real) dropReal(ch);
   const R = u.real = { base: L.b, rb: null, loading: true, L };
   buildRealBody(r, L, realOpts(u)).then(rb => {
     if (u.real !== R || u.rig !== r) { rb.dispose(); return; }
     R.rb = rb; R.loading = false; rb.holder.visible = false; ch.add(rb.holder);
-    rb.setBand(u.look.banded && u.look.status ? STATUS[u.look.status].c : null);
+    rb.setBand(u.look.banded ? BAND_C : null);
     if (u.onReal) u.onReal(rb);
     if (JSON.stringify(R.L) !== JSON.stringify(L)) ensureReal(ch);
     r.lod_ = -1;

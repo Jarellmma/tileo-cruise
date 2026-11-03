@@ -1,24 +1,24 @@
 // TILEO KINGDOM: Strip Life, playable prototype (Three.js, no build step)
 import * as THREE from 'three';
-import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793694552';
-import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793694552';
-import { createGfx, LOOK } from './gfx.js?v=1793694552';
-import { createAmbience } from './ambience.js?v=1793694552';
-import { initCasino } from './casino.js?v=1793694552';
-import { initNet } from './net.js?v=1793694552';
-import { makeCharacter, applyLook, animate, makeCar, STATUS, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793694552';
-import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793694552';
-import { PEOPLE_BASES } from './people_data.js?v=1793694552';
-import { buildStrip, updateWaters } from './world.js?v=1793694552';
-import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793694552';
-import { buildLimo } from './limo.js?v=1793694552';
-import { initPhoto } from './photo.js?v=1793694552';
-import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793694552';
+import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793739721';
+import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793739721';
+import { createGfx, LOOK } from './gfx.js?v=1793739721';
+import { createAmbience } from './ambience.js?v=1793739721';
+import { initCasino } from './casino.js?v=1793739721';
+import { initNet } from './net.js?v=1793739721';
+import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793739721';
+import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793739721';
+import { PEOPLE_BASES } from './people_data.js?v=1793739721';
+import { buildStrip, updateWaters } from './world.js?v=1793739721';
+import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793739721';
+import { buildLimo } from './limo.js?v=1793739721';
+import { initPhoto } from './photo.js?v=1793739721';
+import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793739721';
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window; if (isTouch) document.body.classList.add('touch');
 const SAVE_KEY = 'tileoKingdom.proto.v1';
-const save = Object.assign({ coins: 1000, owned: ['solid'], room: null, bonusDay: '', look: { name: 'Guest', skin: '#d9a47c', hair: '#1a1209', outfit: '#c9932e', style: 'solid', status: 'couple', hairLong: false, banded: false, body: 'f', hairStyle: 'long', beard: false } }, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}'));
+const save = Object.assign({ coins: 1000, owned: ['solid'], room: null, bonusDay: '', look: { name: 'Guest', skin: '#d9a47c', hair: '#1a1209', outfit: '#c9932e', style: 'solid', hairLong: false, banded: false, body: 'f', hairStyle: 'long', beard: false } }, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}'));
 // v3 migration: older saves have no body type / hair style
 save.look = Object.assign({ body: 'f', beard: false }, save.look); if (!save.look.hairStyle || !HAIRSTYLES[save.look.body].includes(save.look.hairStyle)) save.look.hairStyle = save.look.hairLong ? 'long' : HAIRSTYLES[save.look.body][0];
 const PREF_KEY = 'tileoKingdom.prefs.v3'; const prefs = Object.assign({ mini: true, fp: false, ng: true, people: true }, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); const savePrefs = () => localStorage.setItem(PREF_KEY, JSON.stringify(prefs));
@@ -243,8 +243,8 @@ function closeUI() { if (state.ui) { $(state.ui).classList.add('hidden'); const 
 // ---------- HUD ----------
 let toastT = 0; function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 3200); }
 function setCoins(v) { save.coins = Math.max(0, Math.round(v)); $('coinVal').textContent = save.coins.toLocaleString(); persist(); }
-function updateBand() { const L = save.look, s = STATUS[L.status]; $('bandDot').style.background = L.banded ? s.c : '#555'; $('bandDot').style.color = L.banded ? s.c : '#555';
-  $('bandTxt').textContent = L.banded ? `${L.name} · Room ${save.room} · ${s.n} wristband` : `${L.name} · ${s.n} · no wristband (check in at lobby)`; }
+function updateBand() { const L = save.look, c = L.banded ? BAND_C : '#555'; $('bandDot').style.background = c; $('bandDot').style.color = c;
+  $('bandTxt').textContent = L.banded ? `${L.name} · Suite ${save.room} · Kingdom wristband` : `${L.name} · no wristband (check in at the lobby)`; }
 
 // ---------- interactions ----------
 function inRect(p, r) { return p.x >= r[0] && p.x <= r[1] && p.z >= r[2] && p.z <= r[3]; }
@@ -262,11 +262,11 @@ function exitCar() { state.driving = false; state.carSpeed = 0; const h = state.
 function checkIn() {
   const L = save.look;
   if (!save.room) { save.room = 2401 + Math.floor(Math.random() * 10); L.banded = true; applyLook(player, L); persist(); updateBand();
-    toast(`Welcome to TILEO KINGDOM, ${L.name}. Suite ${save.room} on floor 24. Your ${STATUS[L.status].n.toLowerCase()} wristband is on: take the elevator to Floor 24.`); }
-  else toast(`You're checked in: Suite ${save.room}, floor 24. ${STATUS[L.status].n} wristband active.`);
+    toast(`Welcome to TILEO KINGDOM, ${L.name}. Suite ${save.room} on floor 24. Your Kingdom wristband is on: take the elevator to Floor 24.`); }
+  else toast(`You're checked in: Suite ${save.room}, floor 24. Kingdom wristband active.`);
   showKeycard(); }
-function showKeycard() { const L = save.look, s = STATUS[L.status]; $('kcName').textContent = L.name; $('kcRoom').textContent = `${save.room} · Floor 24`;
-  $('kcBand').textContent = s.n; $('kcDot').style.background = s.c; showUI('keycard'); }
+function showKeycard() { const L = save.look; $('kcName').textContent = L.name; $('kcRoom').textContent = `${save.room} · Floor 24`;
+  $('kcBand').textContent = 'Kingdom guest'; $('kcDot').style.background = BAND_C; showUI('keycard'); }
 function openElevator() { const A = state.area; if (A.elevDoor) A.elevDoor.force = 2;
   const box = $('elevBtns'); box.innerHTML = ''; for (const [id, name] of FLOORS) { const b = document.createElement('button'); b.textContent = name; b.disabled = id === A.id;
     b.onclick = () => { closeUI(); if (id === 'rooms' && !save.room) { toast('Floor 24 is for guests: check in at the front desk first.'); return; } transition(() => { const s = areas[id].spawnElev; enterArea(id, s.x, s.z, s.yaw); areas[id].elevDoor && (areas[id].elevDoor.force = 1.5); }); }; box.appendChild(b); }
@@ -326,8 +326,6 @@ function buildCreator(wardrobe) {
   if (showCut) { const cu = $('swCut'); cu.innerHTML = ''; const cuts = save.look.body === 'm' ? [['tank', 'Tank & shorts'], ['polo', 'Polo & shorts']] : [['tank', 'Party top & denim'], ['tee', 'Tee & jeans']];
     for (const [k, n] of cuts) { const b = document.createElement('button'); b.className = 'txt' + ((save.look.cut || cuts[0][0]) === k ? ' on' : ''); b.textContent = n; b.onclick = () => { save.look.cut = k; applyLook(player, save.look); buildCreator(wardrobe); }; cu.appendChild(b); } }
   const st = $('swStyle'); st.innerHTML = ''; for (const k of save.owned) { const b = document.createElement('button'); b.className = 'txt' + (save.look.style === k ? ' on' : ''); b.textContent = STYLES[k].n; b.onclick = () => { save.look.style = k; applyLook(player, save.look); buildCreator(wardrobe); }; st.appendChild(b); }
-  $('statusWrap').style.display = wardrobe && save.look.banded ? 'none' : '';
-  const ss = $('swStatus'); ss.innerHTML = ''; for (const [k, s] of Object.entries(STATUS)) { const b = document.createElement('button'); b.className = 'txt' + (save.look.status === k ? ' on' : ''); b.innerHTML = `<span style="color:${s.c}">●</span> ${s.n}`; b.onclick = () => { save.look.status = k; applyLook(player, save.look); buildCreator(wardrobe); }; ss.appendChild(b); }
 }
 function openWardrobe() { buildCreator(true); state.ui = 'creator'; state.wardrobe = true; $('creator').classList.remove('hidden'); }
 $('crDone').onclick = () => { save.look.name = ($('crName').value || 'Guest').slice(0, 16); persist(); updateBand(); $('creator').classList.add('hidden'); state.ui = null;

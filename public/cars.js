@@ -9,7 +9,7 @@ const PI = Math.PI, clamp = (v, a, b) => Math.max(a, Math.min(b, v)), sstep = (a
 export const CAR_TYPES = {
   //        length width wheelR wheelbase  hood(front) belt  roof  tail  bottom  windshield base / roof front / roof back / rear glass base   nose round
   sedan:  { L: 4.75, W: 1.86, R: 0.34, WB: 2.85, hood: 0.8, belt: 0.98, roof: 1.45, tail: 0.98, yB: 0.24, zW: 0.85, zRF: 0.02, zRB: -1.15, zR: -1.8, nose: 0.55, cabinW: 0.88 },
-  suv:    { L: 4.85, W: 1.96, R: 0.38, WB: 2.90, hood: 1.0, belt: 1.12, roof: 1.78, tail: 1.10, yB: 0.30, zW: 1.15, zRF: 0.45, zRB: -1.95, zR: -2.25, nose: 0.45, cabinW: 0.92 },
+  suv:    { L: 4.75, W: 1.95, R: 0.40, WB: 2.92, hood: 1.04, belt: 1.08, roof: 1.80, tail: 1.12, yB: 0.36, zW: 0.98, zRF: 0.22, zRB: -1.72, zR: -2.02, nose: 0.42, cabinW: 0.9 },
   taxi:   { L: 4.75, W: 1.86, R: 0.34, WB: 2.85, hood: 0.8, belt: 0.98, roof: 1.45, tail: 0.98, yB: 0.24, zW: 0.85, zRF: 0.02, zRB: -1.15, zR: -1.8, nose: 0.55, cabinW: 0.88, sign: true },
   coupe:  { L: 4.55, W: 1.92, R: 0.35, WB: 2.70, hood: 0.72, belt: 0.88, roof: 1.27, tail: 0.92, yB: 0.18, zW: 0.45, zRF: -0.4, zRB: -1.0, zR: -1.95, nose: 0.65, cabinW: 0.82 },
   convertible: { L: 4.6, W: 1.95, R: 0.36, WB: 2.80, hood: 0.80, belt: 0.98, roof: 1.3, tail: 0.98, yB: 0.22, zW: 0.78, zRF: 0.5, zRB: 0.5, zR: 0.5, nose: 0.55, cabinW: 0.9, open: true },
@@ -97,8 +97,8 @@ export function carParts(type) {
   // underbody, grille, lower trim, wheel arch liners
   dark.push(box(P.W - 0.42, 0.14, P.L * 0.86, 0, P.yB - 0.02 + 0.07, 0));
   dark.push(box(P.W * 0.46, 0.16, 0.06, 0, P.hood - 0.3, F.hL - 0.04));
-  dark.push(box(P.W * 0.72, 0.1, 0.06, 0, P.yB + 0.1, F.hL - 0.03));
-  dark.push(box(P.W * 0.8, 0.1, 0.06, 0, P.yB + 0.12, -F.hL + 0.03));
+  dark.push(box(P.W * 0.6, 0.08, 0.06, 0, P.yB + 0.12, F.hL - 0.16)); // lower front / rear trim, tucked inside the rounded body ends
+  dark.push(box(P.W * 0.66, 0.08, 0.06, 0, P.yB + 0.14, -F.hL + 0.16));
   for (const za of [F.zf, F.zr]) for (const s of [-1, 1]) { const t = new THREE.TorusGeometry(P.R + 0.07, 0.035, 4, 12, PI); t.rotateY(PI / 2); t.translate(s * (F.hw(za) - 0.02), P.R, za); dark.push(strip(t)); }
   const tw = 0.23, R = P.R; const { tyre, rim: rimG } = wheelParts(R, tw);
   for (const za of [F.zf, F.zr]) for (const s of [-1, 1]) { const x = s * (F.hw(za) - tw / 2 - 0.015);
@@ -107,10 +107,10 @@ export function carParts(type) {
   // lights (vertex colours > 1 bloom at night): headlights, DRL strip, tail light bar
   const quad = (x, y, z, w, h, nz, c, tilt = 0) => { const g = new THREE.PlaneGeometry(w, h); g.rotateX(tilt); if (nz < 0) g.rotateY(PI); g.translate(x, y, z); const s = strip(g); lights.push(s); (c[1] > 1 ? head : tail).push(s); const n = s.attributes.position.count; for (let i = 0; i < n; i++) lightsC.push(...c); };
   const zF = F.hL - 0.06, yH = P.hood - 0.1;
-  for (const s of [-1, 1]) { const x = s * (F.hw(zF) - 0.3); quad(x, yH, zF + 0.012, 0.34, 0.1, 1, [4, 3.8, 3.2], -0.25); quad(x, yH - 0.07, zF + 0.01, 0.3, 0.025, 1, [3, 3.2, 3.6], -0.25); }
+  for (const s of [-1, 1]) { const x = s * (F.hw(zF) - 0.3); quad(x, yH, zF + 0.012, 0.34, 0.1, 1, [2.6, 2.5, 2.2], -0.25); quad(x, yH - 0.07, zF + 0.01, 0.3, 0.025, 1, [2.0, 2.1, 2.4], -0.25); }
   const zT = -F.hL + 0.05, yT = P.tail - 0.14;
-  quad(0, yT, zT - 0.012, P.W * 0.82, 0.05, -1, [3.4, 0.12, 0.08], 0.3); for (const s of [-1, 1]) quad(s * (P.W / 2 - 0.28), yT - 0.04, zT - 0.012, 0.36, 0.11, -1, [3.6, 0.15, 0.1], 0.3);
-  if (P.sign) { dark.push(box(0.7, 0.06, 0.3, 0, P.roof + 0.04, (P.zRF + P.zRB) / 2)); const sg = new THREE.BoxGeometry(0.66, 0.24, 0.26); sg.translate(0, P.roof + 0.19, (P.zRF + P.zRB) / 2); const s2 = strip(sg); lights.push(s2); for (let i = 0; i < s2.attributes.position.count; i++) lightsC.push(2.4, 2.2, 1.4); }
+  quad(0, yT, zT - 0.012, P.W * 0.82, 0.04, -1, [1.5, 0.06, 0.04], 0.3); for (const s of [-1, 1]) quad(s * (P.W / 2 - 0.28), yT - 0.04, zT - 0.012, 0.36, 0.11, -1, [1.9, 0.08, 0.05], 0.3);
+  if (P.sign) { dark.push(box(0.7, 0.06, 0.3, 0, P.roof + 0.04, (P.zRF + P.zRB) / 2)); const sg = new THREE.BoxGeometry(0.66, 0.24, 0.26); sg.translate(0, P.roof + 0.19, (P.zRF + P.zRB) / 2); const s2 = strip(sg); lights.push(s2); for (let i = 0; i < s2.attributes.position.count; i++) lightsC.push(1.15, 1.02, 0.62); }
   const lg = mergeGeometries(lights); lg.setAttribute('color', new THREE.Float32BufferAttribute(lightsC, 3));
   return cache[type] = { P, F, paint: mergeGeometries(paint.map(strip)), glass: glass.length ? mergeGeometries(glass.map(strip)) : null, dark: mergeGeometries(dark), alloy: mergeGeometries(alloy), lights: lg, head: mergeGeometries(head), tail: mergeGeometries(tail) };
 }
@@ -132,7 +132,7 @@ let MATS = null;
 export function carMats() {
   if (MATS) return MATS;
   return MATS = {
-    paint: new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0.45, roughness: 0.34, clearcoat: 1, clearcoatRoughness: 0.06 }),
+    paint: new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0.18, roughness: 0.4, clearcoat: 1, clearcoatRoughness: 0.08 }), // solid paint under clearcoat (white was blowing out in the sun)
     glass: new THREE.MeshStandardMaterial({ color: 0x0b0f14, roughness: 0.04, metalness: 0.9, envMapIntensity: 1.2 }),
     dark: new THREE.MeshStandardMaterial({ color: 0x121214, roughness: 0.78, metalness: 0.05, side: THREE.DoubleSide }),
     alloy: new THREE.MeshStandardMaterial({ color: 0xc9cdd3, roughness: 0.22, metalness: 1, side: THREE.DoubleSide }),

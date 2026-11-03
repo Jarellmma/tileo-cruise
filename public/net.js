@@ -3,7 +3,7 @@
 // Accounts are shared with TILEO Cruise Lines (same username and password); each game keeps its own saved profile.
 // Public Strips (strangers) only allow the preset chat phrases (also enforced on the server); private parties chat freely.
 import * as THREE from 'three';
-import { makeCharacter, applyLook, animate, disposeCharacter, makeCar, STATUS, STYLES, HAIRSTYLES, EMOTES, FACES } from './characters.js?v=1793694552';
+import { makeCharacter, applyLook, animate, disposeCharacter, makeCar, BAND_C, STYLES, HAIRSTYLES, EMOTES, FACES } from './characters.js?v=1793739721';
 
 export const QUICK_SAYS = ['Hi!', 'Follow me!', 'Meet me at the pool', 'Club tonight?', 'Nice outfit!', 'Race you down the Strip', 'Lucky streak!', 'Want a limo ride?', 'Good game!', 'Bye!'];
 const AREA_LABEL = { strip: 'On the Strip', lobby: 'Lobby & Casino', pool: 'Pool Deck', rooms: 'Suites floor', room: 'In their suite', club: 'Mega Club', needle: 'Sky Needle deck' };
@@ -21,7 +21,7 @@ export function cleanLook(o) {
   if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
   const body = o.body === 'm' ? 'm' : 'f', hs = HAIRSTYLES[body];
   const L = { name: cleanText(o.name, 16) || 'Guest', skin: HEX.test(o.skin) ? o.skin : '#d9a47c', hair: HEX.test(o.hair) ? o.hair : '#1a1209', outfit: HEX.test(o.outfit) ? o.outfit : '#c9932e',
-    style: typeof o.style === 'string' && own(STYLES, o.style) ? o.style : 'solid', status: typeof o.status === 'string' && own(STATUS, o.status) ? o.status : 'couple',
+    style: typeof o.style === 'string' && own(STYLES, o.style) ? o.style : 'solid',
     hairLong: !!o.hairLong, banded: !!o.banded, body, hairStyle: hs.includes(o.hairStyle) ? o.hairStyle : hs[0], beard: body === 'm' && !!o.beard, beardLevel: num(o.beardLevel, 0, 100, 70) | 0,
     glasses: ['', 'aviator', 'round'].includes(o.glasses) ? o.glasses : '' };
   if (['tank', 'polo', 'tee'].includes(o.cut)) L.cut = o.cut;
@@ -121,7 +121,7 @@ export function initNet(G) {
       else if (R.car) { R.car.visible = false; carPool.push(R.car); R.car = null; R.cpos = null; }
       // name tag + speech bubble
       if (!R.tag) { R.tag = document.createElement('div'); R.tag.className = 'ntag'; R.tag.innerHTML = '<i class="nbub"></i><span class="nname"></span>'; tags.appendChild(R.tag); }
-      const nm = R.name + '|' + R.look.status + '|' + R.look.banded; if (R.tag.dataset.k !== nm) { R.tag.dataset.k = nm; const s = R.tag.querySelector('.nname'); s.textContent = R.name; s.style.setProperty('--band', R.look.banded ? STATUS[R.look.status].c : 'transparent'); }
+      const nm = R.name + '|' + R.look.banded; if (R.tag.dataset.k !== nm) { R.tag.dataset.k = nm; const s = R.tag.querySelector('.nname'); s.textContent = R.name; s.style.setProperty('--band', R.look.banded ? BAND_C : 'transparent'); }
       const b = R.tag.querySelector('.nbub'), talking = R.say && now < R.sayUntil; if (b.dataset.x !== (talking ? R.say : '')) { b.dataset.x = talking ? R.say : ''; b.textContent = talking ? R.say : ''; b.style.display = talking ? '' : 'none'; }
       const d = R.pos.distanceTo(cam); _v.set(R.pos.x, R.pos.y + (R.m === 'drive' ? 1.6 : 2.05), R.pos.z).project(G.camera);
       if (_v.z > 1 || uiOpen || (d > 60 && !talking)) R.tag.style.display = 'none';
@@ -168,7 +168,7 @@ export function initNet(G) {
     const others = [...N.remotes.values()].sort((a, b) => a.name.localeCompare(b.name)).map(R => {
       const here = R.area === myArea && myArea !== 'room', far = !here || R.tpos.distanceTo(G.player.position) > 15;
       const btn = R.area === 'room' || R.hid ? '' : far ? `<button class="ghost" data-go="${esc(R.id)}">Go to</button>` : '';
-      return `<div class="pRow"><span class="pDot ${here ? 'here' : ''}" style="--band:${R.look.banded ? STATUS[R.look.status].c : '#666'}"></span><div><b>${esc(R.name)}</b><small>${esc(R.hid ? 'Riding in a limo' : R.drive ? 'Cruising the Strip' : AREA_LABEL[R.area] || '')}</small></div>${btn}</div>`;
+      return `<div class="pRow"><span class="pDot ${here ? 'here' : ''}" style="--band:${R.look.banded ? BAND_C : '#666'}"></span><div><b>${esc(R.name)}</b><small>${esc(R.hid ? 'Riding in a limo' : R.drive ? 'Cruising the Strip' : AREA_LABEL[R.area] || '')}</small></div>${btn}</div>`;
     }).join('');
     $('pplList').innerHTML = me + (others || `<p class="empty">${N.party ? 'Nobody else at your party yet. Copy the invite link and send it to friends.' : 'Nobody else on this Strip right now. Start a private party and invite friends, or check back later.'}</p>`);
     $('chatRow').classList.toggle('hidden', !N.party);

@@ -2,10 +2,10 @@
 // The route runs south on the east lanes, U-turns, north on the west lanes, U-turns, and repeats.
 // Local frame: +z forward, -x is the curb side, the floor is at y 0.36.
 import * as THREE from 'three';
-import { M, neon, glow, goldM, chromeM, onNight, logoPlane, canvas, tex, PI } from './core.js?v=1793694552';
-import { Batch, streetTex } from './city.js?v=1793694552';
-import { makeCharacter, animate } from './characters.js?v=1793694552';
-import { wheelParts } from './cars.js?v=1793694552';
+import { M, neon, glow, goldM, chromeM, onNight, logoPlane, canvas, tex, PI } from './core.js?v=1793739721';
+import { Batch, streetTex } from './city.js?v=1793739721';
+import { makeCharacter, animate } from './characters.js?v=1793739721';
+import { wheelParts } from './cars.js?v=1793739721';
 
 const XL = 12.4, ZE = 615, RA = 12.4, ARC = PI * RA, LEN = 4 * ZE + 2 * ARC; // loop length is about 2538 m
 const SEG = [2 * ZE, 2 * ZE + ARC, 4 * ZE + ARC, LEN];
@@ -86,7 +86,7 @@ export function buildLimo(strip, C) {
   const ST = streetTex(); const beam = new THREE.Mesh(new THREE.PlaneGeometry(5, 15).rotateX(-PI / 2).translate(0, 0.07, 12.8), new THREE.MeshBasicMaterial({ map: ST.head, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.9 }));
   grp.add(beam); const amb = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 7.4).rotateX(-PI / 2).translate(0, 0.315, -0.6), new THREE.MeshBasicMaterial({ color: 0x8a40ff, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false })); grp.add(amb);
   // chauffeur (NPC avatar)
-  const drv = makeCharacter({ skin: '#8a5636', hair: '#1a1209', outfit: '#111111', style: 'solid', hairLong: false, body: 'm', hairStyle: 'buzzed', beard: false, status: 'single', banded: false, role: 'business' }); // chauffeur in a suit
+  const drv = makeCharacter({ skin: '#8a5636', hair: '#1a1209', outfit: '#111111', style: 'solid', hairLong: false, body: 'm', hairStyle: 'buzzed', beard: false, banded: false, role: 'business' }); // chauffeur in a suit
   drv.position.set(0.5, 0.3, 2.3); grp.add(drv);
   const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.12, 0.06, 14), black); cap.position.y = 1.52; drv.add(cap);
   let night = true; onNight(n => { night = n; beam.visible = n; stars.color.setScalar(n ? 1 : 0.55); amb.material.opacity = n ? 0.22 : 0.08; });

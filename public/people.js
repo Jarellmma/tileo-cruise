@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { PEOPLE_BASES } from './people_data.js?v=1793694552';
+import { PEOPLE_BASES } from './people_data.js?v=1793739721';
 
 export const PEOPLE_DIR = 'assets/people/';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
