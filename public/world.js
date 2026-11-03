@@ -1,12 +1,12 @@
 // The Strip: road, sidewalks, parody lookalike landmarks (procedural PBR architecture), Tileo Kingdom tower
 import * as THREE from 'three';
 import { Water } from 'three/addons/objects/Water.js';
-import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, chromeM, canvas, tex, logoMaterial, logoReady, LOGOS , pbr } from './core.js?v=1793739721';
-import { makeLion, makeCharacter, randomLook, animate } from './characters.js?v=1793739721';
-import { STY, facade, roofMat, rect, circle, arcBand, stadium, inset, Batch, streetTex, palms as palmKit, carKitGeo } from './city.js?v=1793739721';
-import { carParts, carMats } from './cars.js?v=1793739721';
-import { buildGrounds } from './landscape.js?v=1793739721';
-import { Q } from './quality.js?v=1793739721';
+import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, chromeM, canvas, tex, logoMaterial, logoReady, LOGOS , pbr } from './core.js?v=1793745796';
+import { makeLion, makeCharacter, randomLook, animate } from './characters.js?v=1793745796';
+import { STY, facade, roofMat, rect, circle, arcBand, stadium, inset, Batch, streetTex, palms as palmKit, carKitGeo } from './city.js?v=1793745796';
+import { carParts, carMats } from './cars.js?v=1793745796';
+import { buildGrounds } from './landscape.js?v=1793745796';
+import { Q } from './quality.js?v=1793745796';
 
 export function facadeMat(color, w, h, d, lit = 0xffd98f, nightI = 1) {
   const mk = (rx) => { const m = new THREE.MeshStandardMaterial({ color, map: rep(T.facade, rx / 6, h / 5), emissive: lit, emissiveMap: rep(T.facadeE, rx / 6, h / 5), emissiveIntensity: nightI, roughness: 0.55, metalness: 0.2 });
@@ -421,9 +421,20 @@ export function buildStrip(A) {
       // keep a gap to the car (or limo) ahead in the same lane
       let gap = 1e9; for (const o of cars) { if (o === c || Math.abs(o.x - c.x) > 1 || o.dir !== c.dir) continue; const d = (o.z - c.z) * c.dir; if (d > 0 && d < gap) gap = d; }
       if (lb && Math.abs(c.x - lb.x) < 2) { const d = (lb.z - c.z) * c.dir; if (d > 0 && d < gap) gap = d - 4; }
+      // the player's car, players on foot in the road, other players' cars (A.blockers, filled by main.js every frame)
+      let blk = false; for (const o of A.blockers || []) { if (Math.abs(o.x - c.x) > (o.ped ? 1.5 : 2.1)) continue; const d = (o.z - c.z) * c.dir + 2.4 - o.len; if (d > -0.5 && d < gap) { gap = d; blk = true; } }
       if (gap < 40) vt = Math.min(vt, Math.max(0, (gap - 7.5) * 1.1));
+      // stuck behind someone: honk, then change lanes when the next lane is clear
+      if (blk && vt < 0.6 && c.s < 0.8) { c.wait = (c.wait || 0) + dt; if (c.wait > 2.2 && !(c.honkT > 0)) { c.honkT = 5 + Math.random() * 3; if (A.onHonk) A.onHonk(c); }
+        if (c.wait > 4 && c.tx === undefined) { const lanes = [3.6, 8, 12.4].map(v => -c.dir * v), i = lanes.reduce((bi, v, j) => Math.abs(v - c.x) < Math.abs(lanes[bi] - c.x) ? j : bi, 0);
+          for (const j of [i + 1, i - 1]) { const lx = lanes[j]; if (lx === undefined) continue;
+            const clear = !cars.some(o => o !== c && Math.abs(o.x - lx) < 1.5 && Math.abs(o.z - c.z) < 9) && !(A.blockers || []).some(o => Math.abs(o.x - lx) < 2.4 && Math.abs(o.z - c.z) < 9);
+            if (clear) { c.tx = lx; break; } } } }
+      else c.wait = 0;
+      if (c.honkT > 0) c.honkT -= dt;
+      if (c.tx !== undefined) { const dx = c.tx - c.x, st = 2.4 * dt; c.x += Math.max(-st, Math.min(st, dx)); vt = blk ? 0.8 : Math.max(vt, 3.5); /* creep until clear of whoever blocked the lane */ if (Math.abs(dx) < 0.02) { c.x = c.tx; delete c.tx; c.wait = 0; } }
       c.s += Math.max(-7 * dt, Math.min(3 * dt, vt - c.s)); c.z += c.dir * c.s * dt; c.v = c.dir * Math.max(0.01, c.s);
-      if (c.z > 640) c.z = -640; if (c.z < -640) c.z = 640; tq.setFromAxisAngle(UP, c.dir > 0 ? 0 : PI); tm.compose(tp.set(c.x, 0.03, c.z), tq, ts);
+      if (c.z > 640) c.z = -640; if (c.z < -640) c.z = 640; tq.setFromAxisAngle(UP, (c.dir > 0 ? 0 : PI) + (c.tx !== undefined ? Math.sign(c.tx - c.x) * c.dir * 0.12 : 0)); tm.compose(tp.set(c.x, 0.03, c.z), tq, ts);
       for (const x of G[c.ty].parts) x.setMatrixAt(c.gi, tm); heads.setMatrixAt(k, tm); });
       for (const ty in G) for (const x of G[ty].parts) x.instanceMatrix.needsUpdate = true; heads.instanceMatrix.needsUpdate = true; }); }
   // pedestrians crossing the Strip on the walk signal (they wait at the corner otherwise)

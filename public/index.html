@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex,nofollow">
 <title>TILEO KINGDOM · Strip Life</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🦁%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=1793739721">
-<script src="config.js?v=1793739721"></script>
+<link rel="stylesheet" href="style.css?v=1793745796">
+<script src="config.js?v=1793745796"></script>
 <script type="importmap">{"imports":{"three":"./lib/three.module.js","three/addons/":"./lib/jsm/"}}</script>
 </head>
 <body>
@@ -176,6 +176,11 @@
     <h3>Graphics quality</h3>
     <div id="qualBtns" class="sw"></div>
     <p id="qualInfo" style="opacity:.75;font-size:.85em"></p>
+    <h3>Sound</h3>
+    <div class="volRow"><label>Music <input type="range" id="volMusic" min="0" max="100" step="5"></label></div>
+    <div class="volRow"><label>City &amp; crowd <input type="range" id="volAmb" min="0" max="100" step="5"></label></div>
+    <div class="volRow"><label>Effects <input type="range" id="volFx" min="0" max="100" step="5"></label></div>
+    <p style="opacity:.75;font-size:.85em">🔊 in the top bar mutes everything. Effects: casino chimes, horns, splashes.</p>
     <h3>Look</h3>
     <div id="lookBtns" class="sw"></div>
     <p id="lookInfo" style="opacity:.75;font-size:.85em"></p>
@@ -198,7 +203,7 @@
       <button data-app="mini">🧭<span>Mini-map</span></button>
       <button data-app="tod">🌇<span>Time of day</span></button>
       <button data-app="mute">🔊<span>Music</span></button>
-      <button data-app="help">⚙️<span>Controls &amp; quality</span></button>
+      <button data-app="help">⚙️<span>Settings &amp; sound</span></button>
       <button data-app="teleport">🌀<span>Teleport</span></button>
       <button data-app="limo">🚘<span>Limo</span></button>
       <button data-app="photo">📸<span>Camera</span></button>
@@ -316,6 +321,6 @@
 </div>
 
 <div id="fade"><img id="fadeLion" src="assets/images/resort-logo.png" alt=""></div>
-<script type="module" src="main.js?v=1793739721"></script>
+<script type="module" src="main.js?v=1793745796"></script>
 </body>
 </html>

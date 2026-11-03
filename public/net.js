@@ -3,7 +3,7 @@
 // Accounts are shared with TILEO Cruise Lines (same username and password); each game keeps its own saved profile.
 // Public Strips (strangers) only allow the preset chat phrases (also enforced on the server); private parties chat freely.
 import * as THREE from 'three';
-import { makeCharacter, applyLook, animate, disposeCharacter, makeCar, BAND_C, STYLES, HAIRSTYLES, EMOTES, FACES } from './characters.js?v=1793739721';
+import { makeCharacter, applyLook, animate, disposeCharacter, makeCar, BAND_C, STYLES, HAIRSTYLES, EMOTES, FACES } from './characters.js?v=1793745796';
 
 export const QUICK_SAYS = ['Hi!', 'Follow me!', 'Meet me at the pool', 'Club tonight?', 'Nice outfit!', 'Race you down the Strip', 'Lucky streak!', 'Want a limo ride?', 'Good game!', 'Bye!'];
 const AREA_LABEL = { strip: 'On the Strip', lobby: 'Lobby & Casino', pool: 'Pool Deck', rooms: 'Suites floor', room: 'In their suite', club: 'Mega Club', needle: 'Sky Needle deck' };
@@ -86,22 +86,41 @@ export function initNet(G) {
     R.tpos.set(num(P[0], -900, 900), num(P[1], -5, 400), num(P[2], -900, 900)); R.tyaw = num(d.r, -20, 20);
     R.m = MODES.has(d.m) ? d.m : ''; R.s = num(d.s, 0, 40); R.hid = !!d.h;
     const D = Array.isArray(d.d) ? d.d : null; R.drive = D ? { x: num(D[0], -900, 900), z: num(D[1], -900, 900), h: num(D[2], -20, 20), l: !!D[3] } : null;
+    const RD = Array.isArray(d.rd) ? d.rd : null; R.rd = RD && (RD[0] === 'car' || RD[0] === 'limo') && typeof RD[1] === 'string' ? { k: RD[0], host: RD[1].slice(0, 40), seat: num(RD[2], 0, 2) | 0 } : null;
+    const LM = Array.isArray(d.lm) ? d.lm : null; R.lm = LM ? { s: num(LM[0], -1e7, 1e7), c: LM[1] === 'black' ? 'black' : 'white', st: !!LM[2] } : null; R.ps = !!d.ps;
     if (!R.seen) { R.pos.copy(R.tpos); R.yaw = R.tyaw; if (R.drive) R.cpos = { ...R.drive }; }
     R.seen = performance.now();
   }
-  function hideRemote(R) { if (R.ch) R.ch.visible = false; if (R.car) R.car.visible = false; if (R.tag) R.tag.style.display = 'none'; }
-  function dropRemote(R) { if (R.ch) disposeCharacter(R.ch); if (R.car) { R.car.visible = false; carPool.push(R.car); } if (R.tag) R.tag.remove(); N.remotes.delete(R.id); }
+  function hideRemote(R) { if (R.ch) R.ch.visible = false; if (R.car) R.car.visible = false; if (R.lmo) R.lmo.visible = false; if (R.tag) R.tag.style.display = 'none'; }
+  function dropRemote(R) { dropShell(R); if (R.ch) disposeCharacter(R.ch); if (R.car) { R.car.visible = false; carPool.push(R.car); } if (R.tag) R.tag.remove(); N.remotes.delete(R.id); }
   function clearRemotes() { for (const R of [...N.remotes.values()]) dropRemote(R); }
   // remote convertibles are pooled and never carry a real spotlight (a new light would recompile every shader)
   const carPool = []; let carsMade = 0;
   function takeCar() { if (carPool.length) return carPool.pop(); if (carsMade >= 6) return null; carsMade++; const c = makeCar(); const b = c.userData.beam; if (b) { c.remove(b, b.target); c.userData.beam = null; } G.scene.add(c); return c; }
   const angW = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+  // other players' limo rides: copies of the limo (pooled, at most 3), driven along the same route from the host's position s
+  const shellPool = []; let shellsMade = 0;
+  function takeShell(color) { let sh = shellPool.pop(); if (!sh && shellsMade < 3 && G.limo) { shellsMade++; sh = G.limo.makeShell(color); } if (sh) { sh.visible = true; sh.userData.paint.color.set(color === 'black' ? 0x0c0c0e : 0xf4f2ee); } return sh; }
+  function dropShell(R) { if (R.lmo) { R.lmo.visible = false; shellPool.push(R.lmo); R.lmo = null; R.lms = undefined; } }
+  const PASS = new THREE.Vector3(-0.45, 0.25, -0.4), _s = new THREE.Vector3();
+  // the vehicle someone rides in: mine (I'm the host) or another player's
+  function hostVehicle(rd) { if (!rd) return null;
+    if (rd.host === N.id) { if (rd.k === 'car' && state.driving) return { o: G.car, k: 'car' }; if (rd.k === 'limo' && state.limo && G.limo.grp.visible) return { o: G.limo.grp, k: 'limo' }; return null; }
+    const H = N.remotes.get(rd.host); if (!H) return null;
+    if (rd.k === 'car' && H.drive && H.car && H.car.visible) return { o: H.car, k: 'car', H }; if (rd.k === 'limo' && H.lm && H.lmo && H.lmo.visible) return { o: H.lmo, k: 'limo', H }; return null; }
+  function seatIn(veh, seat, ch, t, me) { if (veh.k === 'car') { _s.copy(PASS); veh.o.localToWorld(_s); ch.position.copy(_s); ch.rotation.y = veh.o.rotation.y; animate(ch, t, 0, 'drive'); }
+    else { G.limo.seatWorld(veh.o, seat, _s); ch.position.copy(_s); ch.rotation.y = veh.o.rotation.y + Math.PI / 2; animate(ch, t, 0, 'sit'); } }
 
   function update(dt, t) {
     if (!N.on) return;
     send(dt); G.camera.updateMatrixWorld();
     const myArea = state.area && state.area.id, cam = G.camera.position, now = performance.now(), vis = [];
-    for (const R of N.remotes.values()) { R.here = !!myArea && R.area === myArea && myArea !== 'room' && !R.hid && R.tpos.distanceTo(cam) < 220; if (R.here) vis.push(R); else hideRemote(R); }
+    for (const R of N.remotes.values()) { // limo rides (the route is shared, so only the position along it travels)
+      if (R.lm && myArea === 'strip') { if (!R.lmo) R.lmo = takeShell(R.lm.c); if (R.lmo) { const L = G.limo.LEN; if (R.lms === undefined || Math.abs(R.lm.s - R.lms) > 60) R.lms = R.lm.s; else R.lms += (R.lm.s - R.lms) * Math.min(1, dt * 6);
+          const r = G.limo.routeAt(R.lms); R.lmo.visible = true; R.lmo.position.set(r.x, 0.02, r.z); R.lmo.rotation.y = r.h; R.lmo.updateMatrixWorld(true); animate(R.lmo.userData.drv, t, 0, 'drive'); R.tpos.set(r.x, 0, r.z); } }
+      else dropShell(R); }
+    for (const R of N.remotes.values()) { R.veh = R.rd ? hostVehicle(R.rd) : null; if (R.veh) R.tpos.copy(R.veh.o.position);
+      R.here = !!myArea && R.area === myArea && myArea !== 'room' && !R.hid && R.tpos.distanceTo(cam) < 220; if (R.here) vis.push(R); else hideRemote(R); }
     vis.sort((a, b) => a.tpos.distanceToSquared(cam) - b.tpos.distanceToSquared(cam));
     const W = innerWidth, H = innerHeight, uiOpen = !!state.ui && state.ui !== 'mapFull';
     vis.forEach((R, i) => {
@@ -112,7 +131,9 @@ export function initNet(G) {
       const ch = R.ch; ch.visible = true;
       if (R.pos.distanceToSquared(R.tpos) > 81) R.pos.copy(R.tpos); else R.pos.lerp(R.tpos, 1 - Math.exp(-10 * dt));
       R.yaw += angW(R.tyaw - R.yaw) * Math.min(1, dt * 10);
-      ch.position.copy(R.pos); ch.rotation.y = R.yaw; animate(ch, t, R.m === 'drive' ? 0 : R.s, R.m);
+      if (R.veh) seatIn(R.veh, R.rd.seat, ch, t); // riding with someone: sit in their seat
+      else if (R.lmo) { G.limo.seatWorld(R.lmo, R.lm.st ? 99 : -1, _s); ch.position.copy(_s); ch.rotation.y = R.lmo.rotation.y; animate(ch, t, 0, R.lm.st ? 'wave' : 'sit'); }
+      else { ch.position.copy(R.pos); ch.rotation.y = R.yaw; animate(ch, t, R.m === 'drive' ? 0 : R.s, R.m); }
       // their convertible
       if (R.drive && myArea === 'strip') { if (!R.car) R.car = takeCar();
         if (R.car) { const c = R.cpos || (R.cpos = { ...R.drive }); c.x += (R.drive.x - c.x) * Math.min(1, dt * 10); c.z += (R.drive.z - c.z) * Math.min(1, dt * 10); c.h += angW(R.drive.h - c.h) * Math.min(1, dt * 10);
@@ -123,10 +144,13 @@ export function initNet(G) {
       if (!R.tag) { R.tag = document.createElement('div'); R.tag.className = 'ntag'; R.tag.innerHTML = '<i class="nbub"></i><span class="nname"></span>'; tags.appendChild(R.tag); }
       const nm = R.name + '|' + R.look.banded; if (R.tag.dataset.k !== nm) { R.tag.dataset.k = nm; const s = R.tag.querySelector('.nname'); s.textContent = R.name; s.style.setProperty('--band', R.look.banded ? BAND_C : 'transparent'); }
       const b = R.tag.querySelector('.nbub'), talking = R.say && now < R.sayUntil; if (b.dataset.x !== (talking ? R.say : '')) { b.dataset.x = talking ? R.say : ''; b.textContent = talking ? R.say : ''; b.style.display = talking ? '' : 'none'; }
-      const d = R.pos.distanceTo(cam); _v.set(R.pos.x, R.pos.y + (R.m === 'drive' ? 1.6 : 2.05), R.pos.z).project(G.camera);
+      const tp = R.veh || R.lmo ? ch.position : R.pos, d = tp.distanceTo(cam); _v.set(tp.x, tp.y + (R.m === 'drive' || R.veh || R.lmo ? 1.6 : 2.05), tp.z).project(G.camera);
       if (_v.z > 1 || uiOpen || (d > 60 && !talking)) R.tag.style.display = 'none';
       else { R.tag.style.display = ''; R.tag.style.transform = `translate(${((_v.x + 1) / 2 * W).toFixed(1)}px, ${((1 - _v.y) / 2 * H).toFixed(1)}px) translate(-50%, -100%)`; R.tag.style.opacity = d > 35 ? Math.max(0.35, 1 - (d - 35) / 40).toFixed(2) : ''; }
     });
+    if (N.ride) { const veh = hostVehicle(N.ride);
+      if (!veh) { N.ride.lost += dt; if (N.ride.lost > 2.5) leaveRide(true); }
+      else { N.ride.lost = 0; N.ride.last = veh.o.position.clone(); N.ride.h = veh.o.rotation.y; seatIn(veh, N.ride.seat, G.player, t); state.pmode = veh.k === 'car' ? 'drive' : 'sit'; state.moving = 0; } }
     // my own speech bubble
     const mt = $('myBubble'); if (mt) { const talking = N.mySay && now < N.mySayUntil; if (!talking || uiOpen) mt.style.display = 'none';
       else { _v.set(G.player.position.x, G.player.position.y + 2.05, G.player.position.z).project(G.camera); mt.style.display = _v.z > 1 ? 'none' : ''; mt.style.transform = `translate(${((_v.x + 1) / 2 * W).toFixed(1)}px, ${((1 - _v.y) / 2 * H).toFixed(1)}px) translate(-50%, -100%)`; } }
@@ -136,10 +160,32 @@ export function initNet(G) {
     N.sendT -= dt; if (N.sendT > 0) return; N.sendT = 0.1;
     const p = G.player.position, r = G.player.rotation.y, c = G.car;
     const pres = { v: 1, L: lookOut(save.look), a: state.area ? state.area.id : 'strip', p: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)], r: +angW(r).toFixed(2),
-      m: MODES.has(state.pmode || '') ? state.pmode || '' : '', s: +(state.moving || 0).toFixed(1), h: state.limo || state.cine ? 1 : 0,
+      m: MODES.has(state.pmode || '') ? state.pmode || '' : '', s: +(state.moving || 0).toFixed(1), h: state.cine ? 1 : 0,
+      rd: N.ride ? [N.ride.k, N.ride.host, N.ride.seat] : 0, lm: state.limo && G.limo.ride ? [+G.limo.ride.s.toFixed(1), G.limo.ride.color || 'white', G.limo.ride.stand ? 1 : 0] : 0, ps: G.comp && G.comp.inCar ? 1 : 0,
       d: state.driving ? [+c.position.x.toFixed(2), +c.position.z.toFixed(2), +angW(c.rotation.y).toFixed(2), state.lights ? 1 : 0] : 0 };
     const js = JSON.stringify(pres); if (js === N.last) return; N.last = js; sendRaw({ t: 'p', d: pres });
   }
+  // ---------------------------------------------------------------- rides: hop into another player's convertible or limo
+  function seatsTaken(H, k) { const used = new Set(); if (k === 'car' && H.ps) used.add(0); if (k === 'limo') used.add(0); // limo seat 0 is the host's invited guest
+    for (const O of N.remotes.values()) if (O.rd && O.rd.host === H.id && O.rd.k === k) used.add(O.rd.seat); return used; }
+  function joinRide(H, k) { if (!H || state.driving || state.limo || state.cine) return false;
+    const used = seatsTaken(H, k), free = k === 'car' ? [0] : [1, 2]; const seat = free.find(x => !used.has(x));
+    if (seat === undefined) { G.toast(k === 'car' ? `🚗 ${H.name}'s passenger seat is taken.` : `🚘 ${H.name}'s limo is full.`); return false; }
+    N.ride = { k, host: H.id, seat, lost: 0 }; state.ride = N.ride; state.emote = null; N.last = '';
+    G.toast(k === 'car' ? `🚗 Riding with ${H.name}. Press E (or ✋) to get out.` : `🚘 You're in ${H.name}'s limo. Press E (or ✋) to get out.`); return true; }
+  function leaveRide(ended) { const r = N.ride; if (!r) return; N.ride = null; state.ride = null;
+    if (r.last) { const h = r.h || 0, side = r.k === 'car' ? -2.3 : -3.1; G.player.position.set(r.last.x + Math.cos(h) * side, 0, r.last.z - Math.sin(h) * side); G.player.rotation.y = h; }
+    G.player.visible = true; G.toast(ended ? '🚘 The ride ended. You hop out at the curb.' : '👋 You hop out.'); N.last = ''; }
+  function rideAction() {
+    if (N.ride) return { label: 'Get out', act: () => leaveRide(false) };
+    if (!N.open || state.driving || state.limo || state.cine || !state.area || state.area.id !== 'strip') return null;
+    const p = G.player.position; let best = null, bd = 1e9;
+    for (const H of N.remotes.values()) {
+      if (H.drive && H.car && H.car.visible) { const d = Math.hypot(H.car.position.x - p.x, H.car.position.z - p.z); if (d < 4.5 && d < bd) { bd = d; best = { label: `Ride with ${H.name} 🚗`, act: () => joinRide(H, 'car') }; } }
+      if (H.lm && H.lmo && H.lmo.visible) { const d = Math.hypot(H.lmo.position.x - p.x, H.lmo.position.z - p.z); if (d < 7 && d < bd) { bd = d; best = { label: `Join ${H.name}'s limo 🚘`, act: () => joinRide(H, 'limo') }; } } }
+    return best; }
+  function rideCamera() { if (!N.ride || N.ride.k !== 'limo') return false; const veh = hostVehicle(N.ride); return veh ? G.limo.cabinCamera(veh.o) : false; }
+  function vehicles() { const out = []; for (const R of N.remotes.values()) { if (R.car && R.car.visible) out.push({ x: R.car.position.x, z: R.car.position.z, h: R.car.rotation.y, len: 2.4 }); if (R.lmo && R.lmo.visible) out.push({ x: R.lmo.position.x, z: R.lmo.position.z, h: R.lmo.rotation.y, len: 4.6, limo: true }); } return out; }
   function say(text) {
     const x = cleanText(text, 80); if (!x) return false;
     if (!N.party && !QUICK_SAYS.includes(x)) { G.toast('💬 Free chat is for private parties · start one in Online and invite friends.'); return false; }
@@ -167,8 +213,8 @@ export function initNet(G) {
     const me = `<div class="pRow me"><span class="pDot here"></span><div><b>${esc(save.look.name || 'You')} <small>you</small></b><small>${esc(AREA_LABEL[myArea] || '')}</small></div></div>`;
     const others = [...N.remotes.values()].sort((a, b) => a.name.localeCompare(b.name)).map(R => {
       const here = R.area === myArea && myArea !== 'room', far = !here || R.tpos.distanceTo(G.player.position) > 15;
-      const btn = R.area === 'room' || R.hid ? '' : far ? `<button class="ghost" data-go="${esc(R.id)}">Go to</button>` : '';
-      return `<div class="pRow"><span class="pDot ${here ? 'here' : ''}" style="--band:${R.look.banded ? BAND_C : '#666'}"></span><div><b>${esc(R.name)}</b><small>${esc(R.hid ? 'Riding in a limo' : R.drive ? 'Cruising the Strip' : AREA_LABEL[R.area] || '')}</small></div>${btn}</div>`;
+      const btn = R.area === 'room' || R.hid ? '' : (R.drive || R.lm) && !N.ride ? `<button class="ghost" data-ride="${esc(R.id)}">Ride along</button>` : far ? `<button class="ghost" data-go="${esc(R.id)}">Go to</button>` : '';
+      return `<div class="pRow"><span class="pDot ${here ? 'here' : ''}" style="--band:${R.look.banded ? BAND_C : '#666'}"></span><div><b>${esc(R.name)}</b><small>${esc(R.rd ? (R.rd.k === 'car' ? 'Riding in a convertible' : 'Riding in a limo') : R.lm ? 'Riding in their limo' : R.drive ? 'Cruising the Strip' : AREA_LABEL[R.area] || '')}</small></div>${btn}</div>`;
     }).join('');
     $('pplList').innerHTML = me + (others || `<p class="empty">${N.party ? 'Nobody else at your party yet. Copy the invite link and send it to friends.' : 'Nobody else on this Strip right now. Start a private party and invite friends, or check back later.'}</p>`);
     $('chatRow').classList.toggle('hidden', !N.party);
@@ -178,6 +224,8 @@ export function initNet(G) {
     if ($('pCopy')) $('pCopy').onclick = copyInvite;
     if ($('pPublic')) $('pPublic').onclick = () => { switchParty(''); renderPeople(); };
     $('pplList').querySelectorAll('[data-go]').forEach(b => b.onclick = () => goToPeer(b.dataset.go));
+    $('pplList').querySelectorAll('[data-ride]').forEach(b => b.onclick = () => { const H = N.remotes.get(b.dataset.ride); if (!H) return; G.closeUI();
+      const go = () => joinRide(H, H.lm ? 'limo' : 'car'); if (state.area.id === 'strip' && !state.driving && !state.limo) go(); else G.goTo('strip', H.tpos.x + 3, H.tpos.z, go); });
     $('chatQuick').querySelectorAll('[data-q]').forEach(b => b.onclick = () => { if (say(b.dataset.q)) G.closeUI(); });
   }
   const sendTyped = () => { const i = $('chatIn'); if (!i.value.trim()) return; if (say(i.value)) { i.value = ''; G.closeUI(); } };
@@ -283,5 +331,5 @@ export function initNet(G) {
 
   // test / trailer hooks: show a player or a chat line exactly as if it came from the server
   const inject = (id, d) => { readRemote(String(id), d); refresh(); }, injectSay = (id, x) => handle({ t: 'say', id: String(id), x });
-  return { N, A, update, say, openPeople, openAuth, saveSoon, get online() { return N.on; }, cleanLook, inject, injectSay };
+  return { N, A, update, say, openPeople, openAuth, saveSoon, rideAction, leaveRide, rideCamera, vehicles, get ride() { return N.ride; }, get online() { return N.on; }, cleanLook, inject, injectSay };
 }

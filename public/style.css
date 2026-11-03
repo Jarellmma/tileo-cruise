@@ -275,3 +275,7 @@ button.link{background:none;color:#ffcf4a;text-decoration:underline;padding:2px 
 .authOr::before,.authOr::after{content:"";flex:1;height:1px;background:#c9932e44}
 .gBtn{display:flex;justify-content:center;min-height:44px}
 .card.acctCard>button.ghost,.card.peopleCard>button.ghost{display:block;margin:12px auto 0}
+
+/* v6.3: sound sliders */
+.volRow label{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 0}
+.volRow input[type=range]{width:58%;padding:0;border:0;background:none;accent-color:#c9932e}

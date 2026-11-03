@@ -2,10 +2,10 @@
 // The route runs south on the east lanes, U-turns, north on the west lanes, U-turns, and repeats.
 // Local frame: +z forward, -x is the curb side, the floor is at y 0.36.
 import * as THREE from 'three';
-import { M, neon, glow, goldM, chromeM, onNight, logoPlane, canvas, tex, PI } from './core.js?v=1793739721';
-import { Batch, streetTex } from './city.js?v=1793739721';
-import { makeCharacter, animate } from './characters.js?v=1793739721';
-import { wheelParts } from './cars.js?v=1793739721';
+import { M, neon, glow, goldM, chromeM, onNight, logoPlane, canvas, tex, PI } from './core.js?v=1793745796';
+import { Batch, streetTex } from './city.js?v=1793745796';
+import { makeCharacter, animate } from './characters.js?v=1793745796';
+import { wheelParts } from './cars.js?v=1793745796';
 
 const XL = 12.4, ZE = 615, RA = 12.4, ARC = PI * RA, LEN = 4 * ZE + 2 * ARC; // loop length is about 2538 m
 const SEG = [2 * ZE, 2 * ZE + ARC, 4 * ZE + ARC, LEN];
@@ -18,6 +18,9 @@ export function routeAt(s) { s = ((s % LEN) + LEN) % LEN;
 export function routeS(x, z) { return x >= 0 ? ZE - z : SEG[1] + (z + ZE); }
 const PICKUP_S = routeS(1, -330);
 const SEAT = new THREE.Vector3(0.05, 0.36, -3.38), STAND = new THREE.Vector3(0.0, 0.84, -0.8);
+// passenger places on the J-seat along the curb side (facing in): your invited guest and other players riding with you
+export const J_SEATS = [new THREE.Vector3(-0.66, 0.36, -2.3), new THREE.Vector3(-0.66, 0.36, -1.3), new THREE.Vector3(-0.66, 0.36, -0.3)];
+const DRV_LOOK = { skin: '#8a5636', hair: '#1a1209', outfit: '#111111', style: 'solid', hairLong: false, body: 'm', hairStyle: 'buzzed', beard: false, banded: false, role: 'business' }; // chauffeur in a suit
 const VIEWS = ['cabin', 'seat', 'chase', 'side'];
 const VNAME = { cabin: 'Rear cabin', seat: 'Rear-seat POV', chase: 'Chase cam', side: 'Curbside', roof: 'Sunroof' };
 const CAMS = { // [camera position, look-at target, interior?]
@@ -86,7 +89,7 @@ export function buildLimo(strip, C) {
   const ST = streetTex(); const beam = new THREE.Mesh(new THREE.PlaneGeometry(5, 15).rotateX(-PI / 2).translate(0, 0.07, 12.8), new THREE.MeshBasicMaterial({ map: ST.head, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.9 }));
   grp.add(beam); const amb = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 7.4).rotateX(-PI / 2).translate(0, 0.315, -0.6), new THREE.MeshBasicMaterial({ color: 0x8a40ff, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false })); grp.add(amb);
   // chauffeur (NPC avatar)
-  const drv = makeCharacter({ skin: '#8a5636', hair: '#1a1209', outfit: '#111111', style: 'solid', hairLong: false, body: 'm', hairStyle: 'buzzed', beard: false, banded: false, role: 'business' }); // chauffeur in a suit
+  const drv = makeCharacter(DRV_LOOK); drv.userData.noInvite = true;
   drv.position.set(0.5, 0.3, 2.3); grp.add(drv);
   const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.12, 0.06, 14), black); cap.position.y = 1.52; drv.add(cap);
   let night = true; onNight(n => { night = n; beam.visible = n; stars.color.setScalar(n ? 1 : 0.55); amb.material.opacity = n ? 0.22 : 0.08; });
@@ -163,5 +166,11 @@ export function buildLimo(strip, C) {
   C.$('lbView').onclick = cycleView; C.$('lbStand').onclick = toggleStand; C.$('lbRadio').onclick = cycleRadio; C.$('lbStops').onclick = openStops; C.$('lbEnd').onclick = end; C.$('lbWin').onclick = toggleWindows;
   C.$('lbOut').onclick = getOut; C.$('lbCruise').onclick = cruise;
   C.$('limoBar').addEventListener('pointerdown', e => e.stopPropagation());
-  return { grp, start, end, abort, getOut, cruise, stopAt, cycleView, setView, toggleStand, toggleWindows, cycleRadio, update, camera, look, setColor, stopsList, routeAt, PICKUP_S, LEN, get ride() { return L; }, leaving, VNAME };
+  // v6.3 multiplayer: another player's limo is a copy of this one (shared geometry, own paint) with its own chauffeur
+  function makeShell(color) { const i = grp.children.indexOf(drv), sh = grp.clone(true); if (i >= 0) sh.remove(sh.children[i]);
+    const pm = paint.clone(); pm.color.set(color === 'black' ? 0x0c0c0e : 0xf4f2ee); sh.traverse(o => { if (o.isMesh && o.material === paint) o.material = pm; });
+    const d = makeCharacter(DRV_LOOK); d.userData.noInvite = true; d.position.set(0.5, 0.3, 2.3); sh.add(d); sh.userData.drv = d; sh.userData.paint = pm; sh.visible = true; grp.parent.add(sh); return sh; }
+  function seatWorld(g, i, out) { out.copy(i < 0 ? SEAT : i === 99 ? STAND : J_SEATS[i % J_SEATS.length]); return g.localToWorld(out); }
+  function cabinCamera(g) { const [P, Tg] = CAMS.cabin; cp.set(...P); ctg.set(...Tg); g.localToWorld(cp); g.localToWorld(ctg); C.camera.position.copy(cp); C.camera.lookAt(ctg); C.CHAR.camPos.copy(cp); return true; }
+  return { grp, start, end, abort, getOut, cruise, makeShell, seatWorld, cabinCamera, J_SEATS, stopAt, cycleView, setView, toggleStand, toggleWindows, cycleRadio, update, camera, look, setColor, stopsList, routeAt, PICKUP_S, LEN, get ride() { return L; }, leaving, VNAME };
 }

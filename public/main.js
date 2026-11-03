@@ -1,19 +1,20 @@
 // TILEO KINGDOM: Strip Life, playable prototype (Three.js, no build step)
 import * as THREE from 'three';
-import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793739721';
-import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793739721';
-import { createGfx, LOOK } from './gfx.js?v=1793739721';
-import { createAmbience } from './ambience.js?v=1793739721';
-import { initCasino } from './casino.js?v=1793739721';
-import { initNet } from './net.js?v=1793739721';
-import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793739721';
-import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793739721';
-import { PEOPLE_BASES } from './people_data.js?v=1793739721';
-import { buildStrip, updateWaters } from './world.js?v=1793739721';
-import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793739721';
-import { buildLimo } from './limo.js?v=1793739721';
-import { initPhoto } from './photo.js?v=1793739721';
-import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793739721';
+import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793745796';
+import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793745796';
+import { createGfx, LOOK } from './gfx.js?v=1793745796';
+import { createAmbience } from './ambience.js?v=1793745796';
+import { initCasino } from './casino.js?v=1793745796';
+import { initNet } from './net.js?v=1793745796';
+import { initCompanion } from './companion.js?v=1793745796';
+import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793745796';
+import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793745796';
+import { PEOPLE_BASES } from './people_data.js?v=1793745796';
+import { buildStrip, updateWaters } from './world.js?v=1793745796';
+import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793745796';
+import { buildLimo } from './limo.js?v=1793745796';
+import { initPhoto } from './photo.js?v=1793745796';
+import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793745796';
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window; if (isTouch) document.body.classList.add('touch');
@@ -21,7 +22,8 @@ const SAVE_KEY = 'tileoKingdom.proto.v1';
 const save = Object.assign({ coins: 1000, owned: ['solid'], room: null, bonusDay: '', look: { name: 'Guest', skin: '#d9a47c', hair: '#1a1209', outfit: '#c9932e', style: 'solid', hairLong: false, banded: false, body: 'f', hairStyle: 'long', beard: false } }, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}'));
 // v3 migration: older saves have no body type / hair style
 save.look = Object.assign({ body: 'f', beard: false }, save.look); if (!save.look.hairStyle || !HAIRSTYLES[save.look.body].includes(save.look.hairStyle)) save.look.hairStyle = save.look.hairLong ? 'long' : HAIRSTYLES[save.look.body][0];
-const PREF_KEY = 'tileoKingdom.prefs.v3'; const prefs = Object.assign({ mini: true, fp: false, ng: true, people: true }, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); const savePrefs = () => localStorage.setItem(PREF_KEY, JSON.stringify(prefs));
+const PREF_KEY = 'tileoKingdom.prefs.v3'; const prefs = Object.assign({ mini: true, fp: false, ng: true, people: true }, JSON.parse(localStorage.getItem(PREF_KEY) || '{}'));
+prefs.vol = Object.assign({ music: 0.7, amb: 0.35, fx: 0.7 }, prefs.vol || {}); /* Settings → Sound (v6.3: city ambience much quieter by default) */ const savePrefs = () => localStorage.setItem(PREF_KEY, JSON.stringify(prefs));
 let net = null; // v6.2 online (website build only)
 const persist = () => { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); if (net) net.saveSoon(); };
 
@@ -63,9 +65,11 @@ const needleA = defArea('needle', { label: 'Sky Needle · Observation Deck · 23
 const needle = buildNeedle(strip, needleA, C5);
 const limo = buildLimo(strip, C5);
 const photo = initPhoto(C5);
+const comp = initCompanion({ scene, player, car, state, limo, toast, isTouch });
 const UI_CLOSE = { people: () => { const i = $('chatIn'); if (i) i.blur(); }, photo: () => photo.close(), binoc: () => { needle.closeBinoc(); document.body.classList.remove('binocMode'); }, gallery: () => {}, cine: () => {} };
 
 function enterArea(id, x, z, yaw) {
+  if (state.ride && net) net.leaveRide(false);
   if (state.limo || limo.leaving.on) limo.abort();
   if (state.area) { state.area.group.visible = false; if (state.area.showStrip) strip.group.visible = false; }
   const A = state.area = areas[id]; A.group.visible = true; if (A.showStrip) strip.group.visible = true;
@@ -98,10 +102,13 @@ function renderQualityUI() { const box = $('qualBtns'); if (!box) return; box.in
 
 // ---------- music ----------
 const tracks = {}; for (const k of ['lobby', 'pool', 'club']) { const a = new Audio(`assets/audio/${k}.mp3`); a.loop = true; a.preload = 'none'; a.volume = 0; tracks[k] = a; }
-let curTrack = null; const amb = createAmbience();
+let curTrack = null; const amb = createAmbience(); amb.setVolumes(prefs.vol);
+// Settings → Sound: three sliders, saved with the other preferences
+for (const [id, k] of [['volMusic', 'music'], ['volAmb', 'amb'], ['volFx', 'fx']]) { const el = $(id); if (!el) continue; el.value = Math.round(prefs.vol[k] * 100);
+  el.oninput = () => { prefs.vol[k] = el.value / 100; savePrefs(); amb.setVolumes(prefs.vol); if (k === 'music') setMusic(); if (k === 'fx') amb.chime('spin'); }; }
 function setMusic() {
   if (!state.started) return; amb.resume(); amb.setMuted(state.muted); const A = state.area; let key = A.music; if (A.id === 'strip' && state.driving) key = 'pool'; if (state.limo) key = state.limo.radio;
-  const vol = state.muted ? 0 : state.limo ? 0.5 : (A.vol || 0.6);
+  const vol = state.muted ? 0 : (state.limo ? 0.5 : (A.vol || 0.6)) * prefs.vol.music;
   for (const [k, a] of Object.entries(tracks)) { if (k === key) { a.volume = vol; if (a.paused) a.play().catch(() => {}); } else if (!a.paused) a.pause(); }
   curTrack = key; }
 
@@ -165,7 +172,7 @@ function toggleLights(on = !state.lights) { if (!state.driving && on) return; st
   if (b) { b.visible = Q.tier.shadow !== false || Q.key !== 'low'; b.intensity = on ? 180 : 0; if (Q.key === 'low') b.visible = false; }
   if (hm) hm.emissiveIntensity = on ? 4 : 0.6; syncButtons(); }
 let actx = null; function horn() { if (!state.driving) return; try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); const t0 = actx.currentTime, gn = actx.createGain();
-  gn.gain.setValueAtTime(0.0001, t0); gn.gain.exponentialRampToValueAtTime(state.muted ? 0.0001 : 0.22, t0 + 0.02); gn.gain.setValueAtTime(state.muted ? 0.0001 : 0.22, t0 + 0.3); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.38);
+  gn.gain.setValueAtTime(0.0001, t0); gn.gain.exponentialRampToValueAtTime(state.muted ? 0.0001 : Math.max(0.0001, 0.22 * prefs.vol.fx), t0 + 0.02); gn.gain.setValueAtTime(state.muted ? 0.0001 : Math.max(0.0001, 0.22 * prefs.vol.fx), t0 + 0.3); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.38);
   const f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1800; f.connect(gn); gn.connect(actx.destination);
   for (const hz of [415, 523]) { const o = actx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz; o.connect(f); o.start(t0); o.stop(t0 + 0.4); } } catch (e) {}
   $('btnHorn').classList.add('on'); setTimeout(() => $('btnHorn').classList.remove('on'), 300); }
@@ -248,16 +255,17 @@ function updateBand() { const L = save.look, c = L.banded ? BAND_C : '#555'; $('
 
 // ---------- interactions ----------
 function inRect(p, r) { return p.x >= r[0] && p.x <= r[1] && p.z >= r[2] && p.z <= r[3]; }
-function nearest() { if (state.limo || state.cine) return null; if (state.area.id === 'strip') { if (state.driving) return { label: 'Exit car', act: exitCar };
+function nearest() { if (state.ride) return net && net.rideAction(); if (state.limo || state.cine) return null; if (state.area.id === 'strip') { if (state.driving) return { label: 'Exit car', act: exitCar };
     if (Math.hypot(player.position.x - car.position.x, player.position.z - car.position.z) < 4) return { label: 'Drive convertible', act: enterCar };
     const d = strip.tileo; if (Math.hypot(player.position.x - (d.doorX - 3), player.position.z - d.doorZ) < 6) return { label: 'Enter TILEO KINGDOM', act: enterTower };
     if (!state.limo && Math.hypot(player.position.x - 17, player.position.z + 330) < 5) return { label: 'Hail the stretch limo 🚘', act: () => openHail(false) };
-    const k = strip.needleKiosk; if (Math.hypot(player.position.x - k.x, player.position.z - k.z) < k.r) return { label: 'Ride the Sky Needle elevator ▲', act: () => needle.rideUp() }; return null; }
-  let best = null, bd = 1e9; for (const it of state.area.interacts) { const d = Math.hypot(player.position.x - it.x, player.position.z - it.z); if (d < it.r && d < bd) { bd = d; best = it; } } return best; }
+    const k = strip.needleKiosk; if (Math.hypot(player.position.x - k.x, player.position.z - k.z) < k.r) return { label: 'Ride the Sky Needle elevator ▲', act: () => needle.rideUp() };
+    return (net && net.rideAction()) || comp.action(); }
+  let best = null, bd = 1e9; for (const it of state.area.interacts) { const d = Math.hypot(player.position.x - it.x, player.position.z - it.z); if (d < it.r && d < bd) { bd = d; best = it; } } return best || comp.action(); }
 function doInteract() { if (state.ui || !state.started) return; const it = state.near; if (it) it.act(); }
 function enterTower() { transition(() => enterArea('lobby', lobby.spawnDoor.x, lobby.spawnDoor.z, lobby.spawnDoor.yaw)); }
 function exitToStrip() { transition(() => enterArea('strip', strip.tileo.doorX - 8, strip.tileo.doorZ, PI / 2)); }
-function enterCar() { state.driving = true; state.emote = null; toggleWheel(false); state.air = false; state.jy = 0; setTimeout(syncButtons); player.visible = true; state.carHeading = car.rotation.y; cam.dist = 11; toast('Convertible rented: W/S or joystick to drive, A/D to steer. Car radio on.'); setMusic(); }
+function enterCar() { if (state.ride) return; state.driving = true; state.emote = null; toggleWheel(false); state.air = false; state.jy = 0; setTimeout(syncButtons); player.visible = true; state.carHeading = car.rotation.y; cam.dist = 11; toast('Convertible rented: W/S or joystick to drive, A/D to steer. Car radio on.'); setMusic(); }
 function exitCar() { state.driving = false; state.carSpeed = 0; const h = state.carHeading; player.position.set(car.position.x + Math.cos(h) * 2.2, 0, car.position.z - Math.sin(h) * 2.2); player.rotation.set(0, h, 0); cam.dist = 7; toggleLights(false); syncButtons(); setMusic(); }
 function checkIn() {
   const L = save.look;
@@ -340,7 +348,17 @@ function blocked(x, z, r) { const A = state.area;
     if (d > R.w0 - r && d < R.w1 + r) { const a = Math.atan2(dz, dx); if (!R.doors.some(ad => Math.abs(angleWrap(a - ad)) * d < R.half - r)) return true; }
     for (const c of A.circles || []) if (Math.hypot(x - c[0], z - c[1]) < c[2] + r) return true; }
   if (A.rects.length && !A.rects.some(q => x >= q[0] && x <= q[1] && z >= q[2] && z <= q[3])) return true;
-  for (const b of A.aabbs) if (x > b[0] - r && x < b[1] + r && z > b[2] - r && z < b[3] + r) return true; return false; }
+  for (const b of A.aabbs) if (x > b[0] - r && x < b[1] + r && z > b[2] - r && z < b[3] + r) return true;
+  if (A.id === 'strip' && r < 1 && Math.abs(x) < 15) for (const c of strip.traffic) if (Math.abs(c.x - x) < 1.4 && Math.abs(c.z - z) < 2.9) return true; // walking into traffic
+  return false; }
+// the convertible against traffic, other players' cars and the limo: each vehicle is a row of circles along its length
+function carHit(x, z, h) { const fx = Math.sin(h), fz = Math.cos(h), P = [[x + fx * 1.3, z + fz * 1.3], [x, z], [x - fx * 1.3, z - fz * 1.3]];
+  const hit = (ox, oz, oh, half) => { const ex = Math.sin(oh), ez = Math.cos(oh), n = Math.max(1, Math.round(half / 1.2)); for (let k = -n; k <= n; k++) { const cx = ox + ex * half * k / n * 0.8, cz = oz + ez * half * k / n * 0.8;
+      for (const [px, pz] of P) if ((px - cx) ** 2 + (pz - cz) ** 2 < 3.4) return true; } return false; };
+  for (const c of strip.traffic) if (Math.abs(c.z - z) < 9 && Math.abs(c.x - x) < 5 && hit(c.x, c.z, c.dir > 0 ? 0 : PI, 2.4)) return true;
+  if (net) for (const o of net.vehicles()) if (Math.hypot(o.x - x, o.z - z) < 10 && hit(o.x, o.z, o.h, o.len)) return true;
+  if (limo.grp.visible && !state.limo) { const g = limo.grp; if (Math.hypot(g.position.x - x, g.position.z - z) < 10 && hit(g.position.x, g.position.z, g.rotation.y, 5)) return true; }
+  return false; }
 function tryMove(o, dx, dz, r) { const p = o.position; if (!blocked(p.x + dx, p.z + dz, r)) { p.x += dx; p.z += dz; return true; } let ok = false; if (!blocked(p.x + dx, p.z, r)) { p.x += dx; ok = true; } else if (!blocked(p.x, p.z + dz, r)) { p.z += dz; ok = true; } return ok; }
 function waterDepth(p) { for (const w of state.area.water) { if (w.rect && inRect(p, w.rect)) return w.depth; if (w.circle && Math.hypot(p.x - w.circle[0], p.z - w.circle[1]) < w.circle[2]) return w.depth; } return 0; }
 let danceAcc = 0;
@@ -350,11 +368,14 @@ function update(dt, t) {
   ix = Math.max(-1, Math.min(1, ix)); iy = Math.max(-1, Math.min(1, iy));
   if (state.cine) { needle.updRide(dt, t); }
   else if (state.limo) { /* the limo drives itself */ }
+  else if (state.ride) { /* riding with another player: net.js puts you in their seat */ }
   else if (state.driving) {
     const accel = iy * 22, maxV = 34; state.carSpeed += accel * dt; if (!iy) state.carSpeed *= Math.pow(0.4, dt); state.carSpeed = Math.max(-10, Math.min(maxV, state.carSpeed));
     state.carHeading -= ix * dt * 1.6 * Math.min(1, Math.abs(state.carSpeed) / 6) * Math.sign(state.carSpeed || 1);
-    const h = state.carHeading, v = state.carSpeed * dt; if (!tryMove(car, Math.sin(h) * v, Math.cos(h) * v, 2.0)) state.carSpeed *= -0.3;
-    car.rotation.y = h; player.position.set(car.position.x - Math.cos(h) * 0.45 + Math.sin(h) * -0.4, 0.25, car.position.z + Math.sin(h) * 0.45 + Math.cos(h) * -0.4); player.rotation.y = h; animate(player, t, 0, 'drive'); state.pmode = 'drive';
+    const h = state.carHeading, v = state.carSpeed * dt, nx = car.position.x + Math.sin(h) * v, nz = car.position.z + Math.cos(h) * v;
+    if (Math.abs(v) > 0 && carHit(nx, nz, h) && !carHit(car.position.x, car.position.z, h)) { if (Math.abs(state.carSpeed) > 2.5) amb.bump(Math.abs(state.carSpeed) / 14); state.carSpeed *= -0.25; }
+    else if (!tryMove(car, Math.sin(h) * v, Math.cos(h) * v, 2.0)) state.carSpeed *= -0.3;
+    car.rotation.y = h; player.position.set(car.position.x + Math.cos(h) * 0.45 + Math.sin(h) * -0.4, 0.25, car.position.z - Math.sin(h) * 0.45 + Math.cos(h) * -0.4); /* driver's seat on the left */ player.rotation.y = h; animate(player, t, 0, 'drive'); state.pmode = 'drive';
     if (!cam.manual) cam.yaw += (angleWrap(h + PI - cam.yaw)) * Math.min(1, dt * 3);
   } else {
     const run = state.sprint || keys.ShiftLeft || keys.ShiftRight || Math.hypot(joy.x, joy.y) > 0.95; const sp = (run ? 11 : 6) * (waterDepth(player.position) > 0.7 ? 0.55 : 1);
@@ -376,6 +397,9 @@ function update(dt, t) {
   $('btnAct').classList.toggle('hidden', !it); $('actLbl').textContent = lbl || 'Interact'; $('hint').textContent = it ? (isTouch ? `✋ ${lbl}` : `E · ${lbl}`) : ''; $('hint').classList.toggle('on', !!it);
   limo.update(dt, t); photo.pose();
   if (A.id === 'strip' && state.started && !state.limo && !state.cine) { let best = null, bd = 1e9; for (const l of strip.landmarks) { const d = Math.hypot(player.position.x - l.x, player.position.z - l.z); if (d < bd) { bd = d; best = l; } } $('areaName').textContent = `Las Vegas Strip · near ${best.name}${state.driving ? ' · 🚗 ' + Math.round(Math.abs(state.carSpeed) * 2.2) + ' mph' : ''}`; }
+  if (A.id === 'strip' || A.showStrip) { const B = strip.blockers || (strip.blockers = []); B.length = 0; B.push({ x: car.position.x, z: car.position.z, len: 2.4 });
+    if (!state.driving && !state.limo && !state.ride && Math.abs(player.position.x) < 14.5 && A.id === 'strip') B.push({ x: player.position.x, z: player.position.z, len: 0.4, ped: true });
+    if (net) for (const o of net.vehicles()) B.push(o); strip.onHonk = c => { const d = Math.hypot(c.x - player.position.x, c.z - player.position.z); if (d < 80) amb.honk(1 / (1 + d / 25)); }; }
   for (const f of A.anim) f(t, dt, player.position); if (A.showStrip) for (const f of strip.anim) f(t, dt, player.position);
   miniAcc += dt; if (miniAcc > (Q.key === 'low' ? 0.1 : 0.05)) { miniAcc = 0; renderMini(); }
   if (state.ui === 'mapFull') renderFullMap();
@@ -389,6 +413,7 @@ function updateCamera(dt) {
   if (state.ui === 'binoc' && needle.binocCamera()) return;
   if (state.cine && needle.cineCamera(dt)) return;
   if (state.limo && limo.camera(dt)) return;
+  if (state.ride && net && net.rideCamera()) return;
   if (camera.fov !== 62) { camera.fov = 62; camera.updateProjectionMatrix(); }
   const cr = state.ui === 'creator'; // creator preview: 3/4 portrait of the guest, framed to the right of the panel
   player.visible = !prefs.fp || cr;
@@ -408,7 +433,7 @@ function updateCamera(dt) {
   camera.position.lerp(camPos, Math.min(1, dt * 10)); camera.lookAt(camTarget); CHAR.camPos.copy(camera.position);
 }
 let frames = 0, last = performance.now(), t = 0; const photoDof = { on: false, focus: 1 };
-function loop() { const now = performance.now(), dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt; if (window.__preHook) window.__preHook(dt, t); update(dt, t); updateCamera(dt); if (window.__camHook) window.__camHook(camera, dt, t); if (net) net.update(dt, t); syncCharacters(dt); { const pp = state.driving ? car.position : player.position; amb.update(dt, { area: state.area.id, tod: state.tod, pos: pp, traffic: strip.traffic, limo: !!state.limo, driving: state.driving, inCasino: state.area.id === 'lobby' && pp.x > 20 }); } gfx.st.photo = photo.st.on && photo.st.mode === 'selfie' ? (photoDof.on = true, photoDof.focus = Math.max(0.6, photo.st.arm), photoDof) : null; gfx.update(dt, state.driving ? car.position : player.position, t); if (state.area.outdoor) updateWaters(t, camera, gfx.sunDir, gfx.sun.color); gfx.render(); photo.afterRender(); frames++; requestAnimationFrame(loop); }
+function loop() { const now = performance.now(), dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt; if (window.__preHook) window.__preHook(dt, t); update(dt, t); comp.update(dt, t); updateCamera(dt); if (window.__camHook) window.__camHook(camera, dt, t); if (net) net.update(dt, t); syncCharacters(dt); { const pp = state.driving ? car.position : player.position; amb.update(dt, { area: state.area.id, tod: state.tod, pos: pp, traffic: strip.traffic, limo: !!state.limo, driving: state.driving, inCasino: state.area.id === 'lobby' && pp.x > 20 }); } gfx.st.photo = photo.st.on && photo.st.mode === 'selfie' ? (photoDof.on = true, photoDof.focus = Math.max(0.6, photo.st.arm), photoDof) : null; gfx.update(dt, state.driving ? car.position : player.position, t); if (state.area.outdoor) updateWaters(t, camera, gfx.sunDir, gfx.sun.color); gfx.render(); photo.afterRender(); frames++; requestAnimationFrame(loop); }
 
 // ---------- boot ----------
 gfx.applyQuality(); renderQualityUI();
@@ -493,7 +518,7 @@ function hailLimo(color) { prefs.limoColor = color; savePrefs(); closeUI(); if (
   const go = () => { limo.start(color); updateCamera(1); syncButtons(); renderMini(true); };
   if (state.area.id === 'strip' && Math.hypot(player.position.x - 17, player.position.z + 330) < 30) transition(go); else transition(() => { parkCar(); enterArea('strip', 17.5, -330, -PI / 2); go(); }); }
 // test/debug hook (used by the local smoke test)
-window.__game = { amb, areas, state, player, car, cam, save, enterArea, setNight, setTod, setQuality, gfx, Q, scene, camera, checkIn, openSlots, openElevator, enterCar, exitCar, showLoading, showKeycard, frames: () => frames, renderer, applyLook, CHAR, rigStatus, prefs, setEmote, jump, toggleSprint, toggleCam, toggleMini, toggleWheel, toggleLights, horn, openMap, openPhone, openCredits, syncButtons, teleport, openTeleport, TPD, mapPins: () => mapPins, tpBusy: () => tpBusy, blocked, waterDepth, limo, needle, photo, needleA, openHail, hailLimo, updateCamera: d => updateCamera(d), step: (n = 1, dt = 0.05) => { for (let k = 0; k < n; k++) { t += dt; update(dt, t); updateCamera(dt); } },
+window.__game = { amb, areas, state, player, car, cam, save, enterArea, setNight, setTod, setQuality, gfx, Q, scene, camera, checkIn, openSlots, openElevator, enterCar, exitCar, showLoading, showKeycard, frames: () => frames, renderer, applyLook, CHAR, rigStatus, prefs, setEmote, jump, toggleSprint, toggleCam, toggleMini, toggleWheel, toggleLights, horn, openMap, openPhone, openCredits, syncButtons, teleport, openTeleport, TPD, mapPins: () => mapPins, tpBusy: () => tpBusy, blocked, waterDepth, limo, needle, photo, needleA, openHail, hailLimo, updateCamera: d => updateCamera(d), step: (n = 1, dt = 0.05) => { for (let k = 0; k < n; k++) { t += dt; update(dt, t); comp.update(dt, t); updateCamera(dt); } },
   start: () => { $('gate').classList.add('hidden'); $('creator').classList.add('hidden'); state.ui = null; state.started = true; $('hud').classList.remove('hidden'); syncButtons(); renderMini(true); setMusic(); } };
 
 // ---------- v6.2: online players, chat, parties and TILEO accounts (website build: config.js sets TILEO_RELAY_URL) ----------
@@ -509,5 +534,5 @@ function goToSpot(area, x, z, done) { // "Go to" a friend from the Online sheet
   if (!state.started || tpBusy || state.cine || !areas[area]) return; closeUI(); toggleWheel(false);
   transition(() => { parkCar(); enterArea(area, x, z); const q = safeSpot(x, z); player.position.set(q.x, areas[area].floorY || 0, q.z); updateCamera(1); syncButtons(); renderMini(true); if (done) done(); });
 }
-net = initNet({ $, state, player, car, scene, camera, save, toast, showUI, closeUI, persist, applyProfile, goTo: goToSpot, isTouch, chime: () => amb.chime('spin') });
-window.__game.net = net;
+net = initNet({ $, state, player, car, scene, camera, save, toast, showUI, closeUI, persist, applyProfile, goTo: goToSpot, isTouch, chime: () => amb.chime('spin'), limo, comp });
+window.__game.net = net; window.__game.comp = comp; window.__game.carHit = carHit; window.__game.syncCharacters = syncCharacters;

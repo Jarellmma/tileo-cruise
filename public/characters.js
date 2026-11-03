@@ -3,11 +3,11 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { G, M, add, box, cyl, T, PI, glow, logoPlane } from './core.js?v=1793739721';
-import { Q } from './quality.js?v=1793739721';
-import { realLook, buildRealBody, retexture, srcBind, setTigerSource, warmPeople, FACES as RFACES, BODIES } from './people.js?v=1793739721';
-import { PEOPLE_BASES } from './people_data.js?v=1793739721';
-import { carParts, carMats } from './cars.js?v=1793739721';
+import { G, M, add, box, cyl, T, PI, glow, logoPlane } from './core.js?v=1793745796';
+import { Q } from './quality.js?v=1793745796';
+import { realLook, buildRealBody, retexture, srcBind, setTigerSource, warmPeople, FACES as RFACES, BODIES } from './people.js?v=1793745796';
+import { PEOPLE_BASES } from './people_data.js?v=1793745796';
+import { carParts, carMats } from './cars.js?v=1793745796';
 
 export const BAND_C = '#e0b24a'; // the TILEO KINGDOM guest wristband (gold); guests get one at check-in
 export const STYLES = {
@@ -379,7 +379,7 @@ export function makeCar() {
   box(g, seat, -0.45, 0.6, -0.4, 0.62, 0.45, 0.62); box(g, seat, 0.45, 0.6, -0.4, 0.62, 0.45, 0.62);
   for (const x of [-0.45, 0.45]) { const bk = box(g, seat, x, 0.88, -0.78, 0.6, 0.72, 0.14); bk.rotation.x = -0.12; add(g, G.sph, seat, x, 1.66, -0.83, 0.17, 0.12, 0.07); }
   box(g, dash, 0, 0.82, 0.62, 1.6, 0.22, 0.34);
-  const steer = add(g, G.torus, M(0x1a1a1c), -0.45, 1.05, 0.28, 0.2, 0.2, 0.2); steer.rotation.x = -1.0;
+  const steer = add(g, G.torus, M(0x1a1a1c), 0.45, 1.05, 0.28, 0.2, 0.2, 0.2); /* left-hand drive (+x is the car's left) */ steer.rotation.x = -1.0;
   for (const sd of [-1, 1]) box(g, gold, sd * (F.hw(-0.2) * 0.86), P.belt - 0.02, -0.25, 0.04, 0.03, 1.75);
   // DJ Tileo livery: hood (follows the hood slope) + both doors
   const hz = 1.5, hy = F.top(hz), slope = Math.atan2(F.top(hz + 0.1) - F.top(hz - 0.1), 0.2);
@@ -401,7 +401,7 @@ const SMILE = { dance: 1, dj: 1, wave: 0.9, talk: 0.8, yes: 0.9, phone: 0.6 };
 function wantReal(ch, u, lod) {
   if (!PEOPLE.on || lod === 2 || !u.rig || u.noReal) { if (u.real && !u.real.loading) u.realIdle = (u.realIdle || 0) + 1; if (u.real && u.realIdle > 240) dropReal(ch); return false; }
   const e = ch.matrixWorld.elements, d = Math.hypot(e[12] - CHAR.camPos.x, e[13] - CHAR.camPos.y, e[14] - CHAR.camPos.z);
-  if (!u.important) PEOPLE.cands.push([u.remote ? d * 0.35 : d, ch]); // other players get realistic bodies first
+  if (!u.important) PEOPLE.cands.push([u.remote || u.companion ? d * 0.35 : d, ch]); // other players get realistic bodies first
   const want = u.important || !!u.realSlot;
   if (want) { u.realIdle = 0; if (!u.real) ensureReal(ch); }
   else if (u.real && !u.real.loading && ++u.realIdle > 240) dropReal(ch);

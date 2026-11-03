@@ -5,6 +5,7 @@
 const rnd = (a, b) => a + Math.random() * (b - a);
 export function createAmbience() {
   let ac = null, master = null, L = null, noise = null, t = 0, nextHorn = 6, nextChime = 2, nextSplash = 3, nextBabble = 0, muted = false;
+  const vol = { amb: 0.45, fx: 0.7 }; // City & crowd / Effects volume (Settings → Sound)
   function init() {
     if (ac) return true; const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
     try { ac = new AC(); } catch (e) { return false; }
@@ -15,20 +16,20 @@ export function createAmbience() {
     const chain = (...nodes) => { for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]); return nodes[nodes.length - 1]; };
     const bq = (type, f, q = 0.7) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
     const gain = v => { const g = ac.createGain(); g.gain.value = v; return g; };
-    L = {};
+    L = {}; L.bus = gain(vol.amb); L.bus.connect(master); // every ambient layer goes through this bus
     // city rumble: deep filtered noise
     L.city = gain(0); chain(src(), bq('lowpass', 260), bq('lowpass', 420), L.city, master);
-    L.cityLP = bq('lowpass', 20000); L.city.disconnect(); L.city.connect(L.cityLP); L.cityLP.connect(master);
+    L.cityLP = bq('lowpass', 20000); L.city.disconnect(); L.city.connect(L.cityLP); L.cityLP.connect(L.bus);
     // nearby traffic: brighter band, swells as cars pass
     L.near = gain(0); chain(src(), bq('bandpass', 700, 0.6), L.near, L.cityLP);
     // wind: band-passed noise with a slowly drifting centre
-    L.windF = bq('bandpass', 500, 0.8); L.wind = gain(0); chain(src(), L.windF, L.wind, master);
+    L.windF = bq('bandpass', 500, 0.8); L.wind = gain(0); chain(src(), L.windF, L.wind, L.bus);
     // water lapping
-    L.water = gain(0); chain(src(), bq('lowpass', 900), bq('highpass', 120), L.water, master);
+    L.water = gain(0); chain(src(), bq('lowpass', 900), bq('highpass', 120), L.water, L.bus);
     // crowd murmur: three "voices" (formant bands) whose levels flicker at speech rate
-    L.crowd = gain(0); L.crowd.connect(master); L.voices = [380, 820, 1650].map((f, i) => { const g = gain(0); chain(src(), bq('bandpass', f, 3.5 - i), g, L.crowd); return g; });
+    L.crowd = gain(0); L.crowd.connect(L.bus); L.voices = [380, 820, 1650].map((f, i) => { const g = gain(0); chain(src(), bq('bandpass', f, 3.5 - i), g, L.crowd); return g; });
     // effects bus (horns, chimes, splashes)
-    L.fx = gain(1); L.fx.connect(master);
+    L.fx = gain(vol.fx); L.fx.connect(master);
     return true;
   }
   const set = (p, v, tc = 0.4) => { if (p) p.setTargetAtTime(v, ac.currentTime, tc); };
@@ -66,6 +67,10 @@ export function createAmbience() {
     // call from a user gesture (or right after one): creates/resumes the audio context
     resume() { if (!init()) return; if (ac.state === 'suspended') ac.resume().catch(() => {}); master.gain.setTargetAtTime(muted ? 0 : 1, ac.currentTime, 0.5); },
     setMuted(m) { muted = !!m; if (ac) master.gain.setTargetAtTime(muted ? 0 : 1, ac.currentTime, 0.2); },
+    setVolumes(v) { if (typeof v.amb === 'number') vol.amb = v.amb; if (typeof v.fx === 'number') vol.fx = v.fx; if (L) { set(L.bus.gain, vol.amb, 0.1); set(L.fx.gain, vol.fx, 0.1); } },
+    bump(k = 1) { if (!ac || muted) return; const s = ac.createBufferSource(); s.buffer = noise; const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 260; const g = ac.createGain(), t0 = ac.currentTime;
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.5 * Math.min(1, k), t0 + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35); s.connect(lp); lp.connect(g); g.connect(L.fx); s.start(t0, Math.random() * 3); s.stop(t0 + 0.4); },
+    honk(d = 1) { if (!ac || muted || !L) return; horn(0.035 * Math.max(0.15, Math.min(1, d))); },
     update,
     // one-shot effects for the casino UI
     chime(kind = 'spin') { if (!ac || muted) return; if (kind === 'win') bells(0.07, 10, 1046, 0.06); else if (kind === 'big') bells(0.09, 18, 880, 0.05); else bells(0.02, 2, 1318, 0.05); },
