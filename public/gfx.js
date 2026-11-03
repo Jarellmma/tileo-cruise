@@ -16,7 +16,7 @@ import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { BokehShader } from 'three/addons/shaders/BokehShader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { Q } from './quality.js?v=1793692130';
+import { Q } from './quality.js?v=1793694552';
 
 const C = h => new THREE.Color(h);
 const V = (x, y, z) => new THREE.Vector3(x, y, z);

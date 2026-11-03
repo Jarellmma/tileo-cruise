@@ -1,19 +1,19 @@
 // TILEO KINGDOM: Strip Life, playable prototype (Three.js, no build step)
 import * as THREE from 'three';
-import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793692130';
-import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793692130';
-import { createGfx, LOOK } from './gfx.js?v=1793692130';
-import { createAmbience } from './ambience.js?v=1793692130';
-import { initCasino } from './casino.js?v=1793692130';
-import { initNet } from './net.js?v=1793692130';
-import { makeCharacter, applyLook, animate, makeCar, STATUS, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793692130';
-import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793692130';
-import { PEOPLE_BASES } from './people_data.js?v=1793692130';
-import { buildStrip, updateWaters } from './world.js?v=1793692130';
-import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793692130';
-import { buildLimo } from './limo.js?v=1793692130';
-import { initPhoto } from './photo.js?v=1793692130';
-import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793692130';
+import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793694552';
+import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793694552';
+import { createGfx, LOOK } from './gfx.js?v=1793694552';
+import { createAmbience } from './ambience.js?v=1793694552';
+import { initCasino } from './casino.js?v=1793694552';
+import { initNet } from './net.js?v=1793694552';
+import { makeCharacter, applyLook, animate, makeCar, STATUS, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793694552';
+import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793694552';
+import { PEOPLE_BASES } from './people_data.js?v=1793694552';
+import { buildStrip, updateWaters } from './world.js?v=1793694552';
+import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793694552';
+import { buildLimo } from './limo.js?v=1793694552';
+import { initPhoto } from './photo.js?v=1793694552';
+import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793694552';
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window; if (isTouch) document.body.classList.add('touch');

@@ -1,12 +1,12 @@
 // The Strip: road, sidewalks, parody lookalike landmarks (procedural PBR architecture), Tileo Kingdom tower
 import * as THREE from 'three';
 import { Water } from 'three/addons/objects/Water.js';
-import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, chromeM, canvas, tex, logoMaterial, logoReady, LOGOS , pbr } from './core.js?v=1793692130';
-import { makeLion, makeCharacter, randomLook, animate } from './characters.js?v=1793692130';
-import { STY, facade, roofMat, rect, circle, arcBand, stadium, inset, Batch, streetTex, palms as palmKit, carKitGeo } from './city.js?v=1793692130';
-import { carParts, carMats } from './cars.js?v=1793692130';
-import { buildGrounds } from './landscape.js?v=1793692130';
-import { Q } from './quality.js?v=1793692130';
+import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, chromeM, canvas, tex, logoMaterial, logoReady, LOGOS , pbr } from './core.js?v=1793694552';
+import { makeLion, makeCharacter, randomLook, animate } from './characters.js?v=1793694552';
+import { STY, facade, roofMat, rect, circle, arcBand, stadium, inset, Batch, streetTex, palms as palmKit, carKitGeo } from './city.js?v=1793694552';
+import { carParts, carMats } from './cars.js?v=1793694552';
+import { buildGrounds } from './landscape.js?v=1793694552';
+import { Q } from './quality.js?v=1793694552';
 
 export function facadeMat(color, w, h, d, lit = 0xffd98f, nightI = 1) {
   const mk = (rx) => { const m = new THREE.MeshStandardMaterial({ color, map: rep(T.facade, rx / 6, h / 5), emissive: lit, emissiveMap: rep(T.facadeE, rx / 6, h / 5), emissiveIntensity: nightI, roughness: 0.55, metalness: 0.2 });
@@ -427,8 +427,8 @@ export function buildStrip(A) {
       for (const x of G[c.ty].parts) x.setMatrixAt(c.gi, tm); heads.setMatrixAt(k, tm); });
       for (const ty in G) for (const x of G[ty].parts) x.instanceMatrix.needsUpdate = true; heads.instanceMatrix.needsUpdate = true; }); }
   // pedestrians crossing the Strip on the walk signal (they wait at the corner otherwise)
-  { const crossers = []; for (const c of CROSS) for (const dz of [-12.8, 12.8]) for (let n = 0; n < 2; n++) { const ch = makeCharacter(randomLook(R)), side = (n ? 1 : -1) * (R() < 0.5 ? 1 : -1);
-      const p = { ch, z: c + dz + (R() - 0.5) * 2, from: side * 16.8, at: 0, state: 'wait', delay: R() * 3, speed: 1.9 + R() * 0.5 }; ch.position.set(p.from, 0.15, p.z); ch.rotation.y = side > 0 ? -PI / 2 : PI / 2; g.add(ch); crossers.push(p); }
+  { const crossers = []; for (const c of CROSS) for (const dz of [-12.8, 12.8]) for (let n = 0; n < 3; n++) { const ch = makeCharacter(randomLook(R)), side = (n % 2 ? 1 : -1) * (R() < 0.5 ? 1 : -1);
+      const p = { ch, z: c + dz + (R() - 0.5) * 3, from: side * 16.8, at: 0, state: 'wait', delay: R() * 3, speed: 1.9 + R() * 0.5 }; ch.position.set(p.from, 0.15, p.z); ch.rotation.y = side > 0 ? -PI / 2 : PI / 2; g.add(ch); crossers.push(p); }
     A.anim.push((t, dt) => { const S2 = A.signal || {}; for (const p of crossers) { let sp = 0;
       if (p.state === 'wait') { if (S2.walk && S2.t < 30 + p.delay) { if (S2.t > 27.5 + p.delay) { p.state = 'walk'; p.at = 0; } } }
       else { p.at += p.speed * dt; sp = p.speed; const L = Math.abs(p.from) * 2, k = Math.min(1, p.at / L); p.ch.position.x = p.from * (1 - 2 * k); p.ch.position.y = Math.abs(p.ch.position.x) > 14 ? 0.15 : 0.03;

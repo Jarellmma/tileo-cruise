@@ -3,8 +3,8 @@
 // Filters: none / warm / B&W / neon. Watermark: DJ Tileo, resort logo, or off. The HUD hides while you shoot. Shutter flash + sound.
 // Save uses canvas.toBlob + navigator.share (files) with a download fallback. The gallery lives in IndexedDB (cap 24) with a localStorage fallback.
 import * as THREE from 'three';
-import { LOGOS } from './core.js?v=1793692130';
-import { rigBones } from './characters.js?v=1793692130';
+import { LOGOS } from './core.js?v=1793694552';
+import { rigBones } from './characters.js?v=1793694552';
 
 export const FILTERS = {
   none: { n: 'None', css: '' },

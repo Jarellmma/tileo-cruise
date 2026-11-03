@@ -1,10 +1,10 @@
 // Tileo Kingdom interiors: lobby+casino, pool deck, room floor, hotel room, mega club
 import * as THREE from 'three';
-import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, canvas, tex , pbr } from './core.js?v=1793692130';
-import { makeLion, makeCharacter, makeDJ, randomLook, animate, applyLook } from './characters.js?v=1793692130';
-import { palms, facadeMat, makeWater } from './world.js?v=1793692130';
-import { STY, facade, roofMat } from './city.js?v=1793692130';
-import { Q } from './quality.js?v=1793692130';
+import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, canvas, tex , pbr } from './core.js?v=1793694552';
+import { makeLion, makeCharacter, makeDJ, randomLook, animate, applyLook } from './characters.js?v=1793694552';
+import { palms, facadeMat, makeWater } from './world.js?v=1793694552';
+import { STY, facade, roofMat } from './city.js?v=1793694552';
+import { Q } from './quality.js?v=1793694552';
 
 const R = rng(99);
 const gold = () => goldM(0.35, 0.26);
@@ -74,6 +74,29 @@ function walker(g, A, pts, speed = 1.25, look) { const c = makeCharacter(look ||
     c.position.set(p.x, 0, p.z); animate(c, t, sp, sp ? '' : 'phone'); }); return c; }
 function npc(g, A, x, z, ry = 0, mode = '', look) { const c = makeCharacter(look || randomLook(R)); c.position.set(x, 0, z); c.rotation.y = ry; g.add(c); A.anim.push(t => animate(c, t, 0, mode)); return c; }
 function sofa(g, x, z, ry, len = 4, mat = M(0x141210)) { const s = new THREE.Group(); s.position.set(x, 0, z); s.rotation.y = ry; g.add(s); box(s, mat, 0, 0, 0, len, 0.5, 1.2); box(s, mat, 0, 0, -0.5, len, 1.2, 0.3); box(s, gold(), 0, 0.5, 0.0, len + 0.05, 0.06, 1.22); return s; }
+// roulette wheel top (v6.2): 37 pockets in single-zero order, gold turret, and the ball
+const WHEEL_ORDER = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
+const WHEEL_RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
+let wheelTex = null;
+function rouletteWheel(g, x, y, z) {
+  if (!wheelTex) { const [c, k] = canvas(512, 512), C = 256, n = 37;
+    k.fillStyle = '#3a2210'; k.beginPath(); k.arc(C, C, 255, 0, Math.PI * 2); k.fill();
+    for (let i = 0; i < n; i++) { const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2, v = WHEEL_ORDER[i];
+      k.fillStyle = v === 0 ? '#0d7a3a' : WHEEL_RED.has(v) ? '#b3121e' : '#151515'; k.beginPath(); k.moveTo(C, C); k.arc(C, C, 236, a0, a1); k.closePath(); k.fill();
+      k.save(); k.translate(C, C); k.rotate((a0 + a1) / 2); k.fillStyle = '#f4ead2'; k.font = 'bold 20px sans-serif'; k.textAlign = 'center'; k.textBaseline = 'middle'; k.translate(214, 0); k.rotate(Math.PI / 2); k.fillText(String(v), 0, 0); k.restore();
+      k.strokeStyle = '#d8b45a'; k.lineWidth = 2; k.beginPath(); k.moveTo(C + Math.cos(a0) * 150, C + Math.sin(a0) * 150); k.lineTo(C + Math.cos(a0) * 236, C + Math.sin(a0) * 236); k.stroke(); }
+    const gr = k.createRadialGradient(C, C, 20, C, C, 150); gr.addColorStop(0, '#f2cf73'); gr.addColorStop(0.6, '#a7772c'); gr.addColorStop(1, '#5a3a14');
+    k.fillStyle = gr; k.beginPath(); k.arc(C, C, 150, 0, Math.PI * 2); k.fill();
+    k.strokeStyle = '#e6c26a'; k.lineWidth = 5; for (const r of [150, 192, 236]) { k.beginPath(); k.arc(C, C, r, 0, Math.PI * 2); k.stroke(); }
+    for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; k.strokeStyle = '#f2d27a'; k.lineWidth = 9; k.beginPath(); k.moveTo(C, C); k.lineTo(C + Math.cos(a) * 140, C + Math.sin(a) * 140); k.stroke(); }
+    wheelTex = new THREE.CanvasTexture(c); wheelTex.colorSpace = THREE.SRGBColorSpace; wheelTex.anisotropy = 4; }
+  const w = new THREE.Group(); w.position.set(x, y, z); g.add(w);
+  const top = new THREE.Mesh(new THREE.CircleGeometry(0.88, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: wheelTex, roughness: 0.35, metalness: 0.2 })); top.position.y = 0.004; w.add(top);
+  const turret = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.22, 16), new THREE.MeshStandardMaterial({ color: 0xe0b24a, metalness: 1, roughness: 0.22 })); turret.position.y = 0.11; w.add(turret);
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8), new THREE.MeshStandardMaterial({ color: 0xf6f3ea, roughness: 0.15 })); ball.userData.a = 0; g.add(ball);
+  const holder = new THREE.Group(); holder.position.set(x, y, z); g.add(holder); holder.add(ball); w.userData.ball = ball;
+  return w;
+}
 function circleCol(A, x, z, r) { A.aabbs.push([x - r, x + r, z - r, z + r]); }
 
 // =========================== LOBBY + CASINO ===========================
@@ -144,7 +167,8 @@ export function buildLobby(A, ctx) {
   for (const rx of [32, 44, 56]) for (let k = 0; k < 5; k++) { slot(rx - 0.6, -21 + k * 2.2, -PI / 2); slot(rx + 0.6, -21 + k * 2.2, PI / 2); }
   slot(25, -6, PI / 2, true); const ring = add(g, G.torus, neon(0xffd23a), 25, 0.08, -6, 1.5, 1.5, 3); ring.rotation.x = PI / 2;
   // tables (stubs for v1)
-  const felt = M(0x0e5a2a); cyl(g, M(0x2a1a0a), 40, 0, 14, 3, 0.95); cyl(g, felt, 40, 0.95, 14, 2.8, 0.05); const wheel = cyl(g, gm, 38.5, 1.0, 14, 0.9, 0.2); A.anim.push((t, dt = 0.016) => wheel.rotation.y += dt * (ctx.rlFast ? 10 : 1));
+  const felt = M(0x0e5a2a); cyl(g, M(0x2a1a0a), 40, 0, 14, 3, 0.95); cyl(g, felt, 40, 0.95, 14, 2.8, 0.05); cyl(g, gm, 38.5, 1.0, 14, 0.9, 0.2); const wheel = rouletteWheel(g, 38.5, 1.2, 14);
+  A.anim.push((t, dt = 0.016) => { const fast = ctx.rlFast || A.rlFast; wheel.rotation.y += dt * (fast ? 7 : 0.6); const b = wheel.userData.ball; b.userData.a -= dt * (fast ? 11 : 0); b.position.set(Math.cos(b.userData.a - wheel.rotation.y) * (fast ? 0.8 : 0.66), 0.05, Math.sin(b.userData.a - wheel.rotation.y) * (fast ? 0.8 : 0.66)); });
   circleCol(A, 40, 14, 3); A.interacts.push({ x: 40, z: 18.2, r: 2.4, label: 'Play roulette', act: () => ctx.openRoulette() });
   for (const bx of [54, 63]) { cyl(g, M(0x2a1a0a), bx, 0, 14, 2.6, 0.95); cyl(g, felt, bx, 0.95, 14, 2.4, 0.05); circleCol(A, bx, 14, 2.6); A.interacts.push({ x: bx, z: 17.6, r: 2.2, label: 'Play blackjack', act: () => ctx.openBlackjack() }); npc(g, A, bx, 11, 0, '', { skin: '#5e3a22', hair: '#111', outfit: '#ffffff', style: 'solid' }); }
   box(g, M(0x0e0d0c), 68, 0, -2, 3, 3, 10); box(g, gm, 68, 3, -2, 3.4, 0.2, 10.4); signMesh(g, 'COIN CAGE', '#ffcf4a', 69.4, 5, -2, 6, 1.2, -PI / 2, '', '#0e0d0c'); A.aabbs.push([66.4, 70, -7.2, 3.2]);
@@ -162,7 +186,7 @@ export function buildLobby(A, ctx) {
 // =========================== POOL DECK (rooftop) ===========================
 export function buildPool(A, ctx) {
   const g = A.group, gm = gold();
-  { const d = plane(g, pbr('travertine', 124 / 2.4, 104 / 2.4, { macro: [0.06, 0.12], color: 0xbdb6ac }), 0, 0, 0, 124, 104); d.receiveShadow = true; }
+  { const d = plane(g, pbr('travertine', 124 / 2.4, 104 / 2.4, { macro: [0.06, 0.12], color: 0xa29b91 }), 0, 0, 0, 124, 104); d.receiveShadow = true; }
   const pl = [];
   // skyline backdrop
   { const keys = ['glassBlue', 'goldGlass', 'darkGlass', 'cream', 'white', 'emerald', 'beige', 'pink'], roof = roofMat();
