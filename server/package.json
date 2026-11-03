@@ -1,0 +1,10 @@
+{
+  "name": "tileo-kingdom-multiplayer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WebSocket relay and TILEO accounts for TILEO KINGDOM: Strip Life (no npm install: ws and pg are vendored).",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}

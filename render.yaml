@@ -1,0 +1,25 @@
+# Reference only (the services were created from the Render dashboard / API on branch "kingdom").
+services:
+  - type: web
+    name: tileo-kingdom-server
+    runtime: node
+    plan: free
+    region: virginia
+    branch: kingdom
+    buildCommand: echo "No dependencies to install (ws and pg are vendored)"
+    startCommand: node server/server.js
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://tileo-kingdom.onrender.com
+      - key: TILEO_GAME
+        value: kingdom
+      - key: DATABASE_URL          # same database as TILEO Cruise: tileo-accounts
+        fromDatabase:
+          name: tileo-accounts
+          property: connectionString
+  - type: web
+    runtime: static
+    name: tileo-kingdom
+    branch: kingdom
+    buildCommand: echo "Prebuilt static site - nothing to build"
+    staticPublishPath: public

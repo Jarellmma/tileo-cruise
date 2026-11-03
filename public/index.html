@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>TILEO KINGDOM · Strip Life</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🦁%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=1793692130">
+<script src="config.js?v=1793692130"></script>
+<script type="importmap">{"imports":{"three":"./lib/three.module.js","three/addons/":"./lib/jsm/"}}</script>
+</head>
+<body>
+<div id="app"></div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="nameTags"></div><div id="myBubble" class="nbub mine"></div>
+  <div id="topL">
+    <div class="chip" id="coins">🪙 <b id="coinVal">1000</b> <small>Kingdom Coins</small></div>
+    <div class="chip" id="band"><img class="bandLogo" src="assets/images/resort-logo.png" alt=""><span id="bandDot"></span><span id="bandTxt">No wristband · check in at the lobby</span></div>
+  </div>
+  <div id="areaName">Las Vegas Strip</div>
+  <div id="topR">
+    <button class="rbtn hidden" id="btnPeople" title="Online players &amp; chat (Y)">👥<i id="pplBadge" class="hidden"></i></button>
+    <button class="rbtn" id="btnPhone" title="Phone menu (P)">📱</button>
+    <button class="rbtn" id="btnPhoto" title="Photo mode (C)">📸</button>
+    <button class="rbtn" id="btnMap" title="Mini-map on/off (K)">🗺️</button>
+    <button class="rbtn" id="btnCam" title="1st / 3rd person camera (V)">🎥</button>
+    <button class="rbtn" id="btnNight" title="Day / Night (N)">🌙</button>
+    <button class="rbtn" id="btnMute" title="Music (M)">🔊</button>
+    <button class="rbtn" id="btnHelp" title="Controls">?</button>
+  </div>
+  <div id="miniWrap" title="Tap for the full map (Tab)"><canvas id="miniMap" width="264" height="264"></canvas><div id="miniN">N</div></div>
+  <div id="hint"></div>
+  <div id="joy"><div id="joyKnob"></div></div>
+  <!-- right-thumb cluster: big primary button + arc of secondary buttons (never overlaps the left joystick) -->
+  <div id="actR">
+    <button id="btnAct" class="pill hidden">✋ <span id="actLbl">Interact</span></button>
+    <button id="btnJump" class="abtn cb" title="Jump (Space)">⤒<span>Jump</span></button>
+    <button id="btnHorn" class="abtn cb hidden" title="Horn (H)">📯<span>Horn</span></button>
+    <button id="btnEmote" class="abtn small ca1" title="Emotes (Q, 1-8)">😀<span>Emote</span></button>
+    <button id="btnLights" class="abtn small ca1 hidden" title="Headlights (L)">💡<span>Lights</span></button>
+    <button id="btnSprint" class="abtn small ca2" title="Sprint toggle (R, or hold Shift)">🏃<span>Sprint</span></button>
+    <button id="btnDance" class="abtn small ca3" title="Dance (G)">💃<span>Dance</span></button>
+    <button id="btnTp" class="abtn small ca4" title="Teleport (T)">🌀<span>Teleport</span></button>
+  </div>
+  <div id="emoteWheel" class="hidden"></div>
+  <!-- v5: limo ride controls -->
+  <div id="limoBar" class="hidden">
+    <div id="limoInfo"></div>
+    <div class="lbRow">
+      <button id="lbView" title="Camera view (V)">🎥<span>View</span></button>
+      <button id="lbStand" title="Stand up through the sunroof (Space)">🌅<span>Stand up</span></button>
+      <button id="lbRadio" title="Radio (B)">📻<span>Radio</span></button>
+      <button id="lbWin" title="Windows (O)">🪟<span>Windows</span></button>
+      <button id="lbStops" title="Pick a stop">📍<span>Stops</span></button>
+      <button id="lbEnd" class="end" title="End ride (X)">🚪<span>End ride</span></button>
+    </div>
+    <div id="limoStops" class="hidden"></div>
+    <div id="limoArrive" class="hidden"><span id="limoArrTxt"></span><button id="lbOut">🚪 Get out</button><button id="lbCruise">🚘 Keep cruising</button></div>
+  </div>
+  <div id="toast"></div>
+</div>
+
+<!-- loading -->
+<div id="loading" class="overlay">
+  <div class="loadcard">
+    <img class="loadDj" src="assets/images/dj-tileo-logo.png" alt="DJ Tileo">
+    <div class="loadTag">DJ TILEO · LIVE AT TILEO KINGDOM</div>
+    <div class="bar"><i id="loadBar"></i></div>
+    <div class="loadTxt" id="loadTxt">Loading the Strip…</div>
+  </div>
+</div>
+
+<!-- 18+ gate -->
+<div id="gate" class="overlay">
+  <div class="card gatecard">
+    <img class="gateLogo" src="assets/images/resort-logo.png" alt="TILEO KINGDOM Lifestyle Resort">
+    <h1>TILEO KINGDOM</h1>
+    <h2>Strip Life</h2>
+    <p class="big">Adults only · 18+</p>
+    <p>A flirty lifestyle-resort simulation on a stylized Las Vegas Strip. Mature themes, no nudity or explicit content.
+      All casino games use free play coins only: no real-money gambling, no cash-out.</p>
+    <p class="fine">Strip resorts in this game are fictional parody lookalikes and are not affiliated with any real resort or brand.</p>
+    <div class="row">
+      <button id="gateYes" class="gold">I'm 18 or older · Enter</button>
+      <button id="gateNo" class="ghost">Leave</button>
+    </div>
+    <div id="acctBar" class="acctBar hidden"></div>
+    <div class="djpromo"><img src="assets/images/dj-tileo-logo.png" alt="DJ Tileo"><div><b>TONIGHT AT THE MEGA CLUB</b><br>DJ TILEO live · rooftop-to-pool sets all night</div></div>
+    <p class="fine">Free to play in your browser · play coins only, nothing to buy.</p>
+  </div>
+</div>
+
+<!-- character creator / wardrobe -->
+<div id="creator" class="overlay side hidden">
+  <div class="card">
+    <h2 id="crTitle">Create your guest</h2>
+    <label>Name <input id="crName" maxlength="16" value="Guest"></label>
+    <div class="lbl">Body</div><div class="sw" id="swBody"></div>
+    <div id="realRows">
+      <div class="lbl">Face <small>(skin tone and hair come with the face)</small></div><div class="sw" id="swFace"></div>
+      <div class="lbl">Sunglasses</div><div class="sw" id="swGlasses"></div>
+    </div>
+    <div id="classicRows">
+      <div class="lbl">Skin tone</div><div class="sw" id="swSkin"></div>
+      <div class="lbl">Hair style</div><div class="sw" id="swHairStyle"></div>
+      <div class="lbl">Hair color</div><div class="sw" id="swHair"></div>
+    </div>
+    <div class="lbl">Outfit color</div><div class="sw" id="swOutfit"></div>
+    <div class="lbl">Outfit style <small>(buy more at Tiger Boutique)</small></div><div class="sw" id="swStyle"></div>
+    <div id="cutRow"><div class="lbl">Classic cut</div><div class="sw" id="swCut"></div></div>
+    <div id="statusWrap">
+      <div class="lbl">Lifestyle status <small>(sets your wristband color)</small></div>
+      <div class="sw" id="swStatus"></div>
+    </div>
+    <button id="crDone" class="gold">Hit the Strip</button>
+  </div>
+</div>
+
+<!-- elevator -->
+<div id="elev" class="overlay hidden">
+  <div class="card small">
+    <h2>Elevator</h2>
+    <div class="elevPromo"><img src="assets/images/dj-tileo-logo.png" alt="DJ Tileo"><span>DJ TILEO tonight<br><b>Mega Club · Floor C</b></span></div>
+    <div id="elevBtns"></div>
+    <button class="ghost" data-close="elev">Close</button>
+  </div>
+</div>
+
+<!-- check-in keycard -->
+<div id="keycard" class="overlay hidden">
+  <div class="card small keycardCard">
+    <img class="kcLogo" src="assets/images/resort-logo.png" alt="TILEO KINGDOM">
+    <div class="kcRow"><span>Guest</span><b id="kcName">Guest</b></div>
+    <div class="kcRow"><span>Suite</span><b id="kcRoom">2401 · Floor 24</b></div>
+    <div class="kcRow"><span>Wristband</span><b><i id="kcDot"></i><span id="kcBand">Single</span></b></div>
+    <p class="fine">Tap the elevator to Floor 24. DJ TILEO plays the Mega Club tonight.</p>
+    <button class="gold" data-close="keycard">Got it</button>
+  </div>
+</div>
+
+<!-- slots -->
+<div id="slots" class="overlay hidden">
+  <div class="card small">
+    <h2>Lion's Roar Slots</h2>
+    <div class="reels"><div class="reel">🦁</div><div class="reel">🐯</div><div class="reel">👑</div></div>
+    <div id="slotMsg">Pick a bet and spin. Play coins only.</div>
+    <div class="row" id="betRow">
+      <button class="bet on" data-bet="10">10</button><button class="bet" data-bet="50">50</button><button class="bet" data-bet="100">100</button>
+    </div>
+    <button id="spin" class="gold">SPIN</button>
+    <p class="fine">🦁🦁🦁 ×50 · 🐯🐯🐯 ×25 · 👑👑👑 ×15 · 777 ×10 · 💎💎💎 ×8 · 🍒🍒🍒 ×5 · 🦁🦁 ×2 · any pair ×1</p>
+    <button class="ghost" data-close="slots">Leave machine</button>
+  </div>
+</div>
+
+<!-- shop -->
+<div id="shop" class="overlay hidden">
+  <div class="card small">
+    <h2>Tiger Boutique</h2>
+    <div id="shopList"></div>
+    <button class="ghost" data-close="shop">Close</button>
+  </div>
+</div>
+
+<!-- help -->
+<div id="help" class="overlay hidden">
+  <div class="card small">
+    <h2>Controls</h2>
+    <p><b>Keyboard:</b> WASD / arrows move · Shift hold or R toggle sprint · Space jump · drag mouse to look · wheel zoom · E interact · G dance · Q emote wheel (1-8 pick) · V 1st/3rd person · K mini-map · Tab full map · P phone menu · N day/sunset/night · M music · Esc close</p>
+    <p><b>Phone:</b> left joystick moves (push to the edge to run) · drag the screen to look · right thumb: ⤒ jump, 🏃 sprint, 😀 emotes, 💃 dance, ✋ interact · top: 📱 menu, 🗺️ mini-map (tap the map for the full Strip), 🎥 camera</p>
+    <p><b>Photo mode:</b> C or 📸 anywhere · Space shutter · F rear/selfie · 1-4 filters (none, warm, B&amp;W, neon) · W watermark · G gallery · drag to aim, wheel/pinch to zoom.</p>
+    <p><b>Limo:</b> hail at the TILEO KINGDOM curb, from 📱 Limo, or teleport. V camera view · Space stand in the sunroof · B radio · O windows · 📍 pick a stop · X end ride.</p>
+    <p><b>Sky Needle:</b> ride the street-level elevator next to the tower or teleport to the top. The deck has an indoor and an outdoor ring; walk all the way around. 🔭 binoculars cost 5 coins.</p>
+    <p><b>Driving:</b> W/S gas &amp; brake/reverse, A/D steer, H or 📯 horn, L or 💡 headlights, E exit car.</p>
+    <p><b>Casino tables:</b> walk up to the roulette wheel or a blackjack table and press E. Blackjack pays 3:2, dealer stands on 17; roulette has a single zero. Play coins only.</p>
+    <p class="onlineOnly"><b>Online (website):</b> Y or 👥 shows who is here, chat and parties. Public Strips use preset phrases; start a private party and send the invite link to chat freely. 👑 Account in the phone signs in with your TILEO account (the same one as TILEO Cruise Lines).</p>
+    <h3>Graphics quality</h3>
+    <div id="qualBtns" class="sw"></div>
+    <p id="qualInfo" style="opacity:.75;font-size:.85em"></p>
+    <h3>Look</h3>
+    <div id="lookBtns" class="sw"></div>
+    <p id="lookInfo" style="opacity:.75;font-size:.85em"></p>
+    <h3>People</h3>
+    <div id="peopleBtns" class="sw"></div>
+    <p style="opacity:.75;font-size:.85em">Realistic: lifelike guests near you (more on High). Classic: the original stylized guests, lighter on old phones.</p>
+    <p style="opacity:.75;font-size:.85em">🌙 button / N cycles day → sunset → night.</p>
+    <button class="ghost" data-close="help">Got it</button>
+  </div>
+</div>
+
+<!-- phone menu -->
+<div id="phone" class="overlay hidden">
+  <div class="card small phoneCard">
+    <div class="phoneTop"><img src="assets/images/resort-logo.png" alt=""><b>Kingdom Phone</b></div>
+    <div class="appGrid">
+      <button data-app="map">🗺️<span>Strip map</span></button>
+      <button data-app="emote">😀<span>Emotes</span></button>
+      <button data-app="cam">🎥<span>Camera</span></button>
+      <button data-app="mini">🧭<span>Mini-map</span></button>
+      <button data-app="tod">🌇<span>Time of day</span></button>
+      <button data-app="mute">🔊<span>Music</span></button>
+      <button data-app="help">⚙️<span>Controls &amp; quality</span></button>
+      <button data-app="teleport">🌀<span>Teleport</span></button>
+      <button data-app="limo">🚘<span>Limo</span></button>
+      <button data-app="photo">📸<span>Camera</span></button>
+      <button data-app="gallery">🖼️<span>Gallery</span></button>
+      <button data-app="credits">📜<span>Credits</span></button>
+      <button data-app="people" class="hidden">👥<span>Online</span></button>
+      <button data-app="account" class="hidden">👑<span>Account</span></button>
+    </div>
+    <button class="ghost" data-close="phone">Close</button>
+  </div>
+</div>
+
+<!-- full map -->
+<div id="mapFull" class="overlay hidden">
+  <div class="card mapCard">
+    <h2 id="mapTitle">Las Vegas Strip</h2>
+    <canvas id="mapCanvas" width="720" height="900"></canvas>
+    <p class="fine" id="mapLegend">▲ you · 🚗 convertible · 👑 TILEO KINGDOM · north is up</p>
+    <button id="mapTp">🌀 Teleport menu</button>     <button class="ghost" data-close="mapFull">Close</button>
+  </div>
+</div>
+
+<!-- teleport -->
+<div id="teleport" class="overlay hidden">
+  <div class="card tpCard">
+    <h2>🌀 Lion Teleport</h2>
+    <div id="tpList" class="tpGrid"></div>
+    <label class="tpOpt"><input type="checkbox" id="tpSeat"> My Car: put me straight in the driver seat</label>
+    <p class="fine">Shortcut: T. On the full map you can also tap a pin to jump there.</p>
+    <button class="ghost" data-close="teleport">Close</button>
+  </div>
+</div>
+
+<!-- credits -->
+<div id="credits" class="overlay hidden">
+  <div class="card creditsCard">
+    <h2>Credits</h2>
+    <div id="creditsBody"></div>
+    <button class="ghost" data-close="credits">Close</button>
+  </div>
+</div>
+
+<!-- v5: limo hail -->
+<div id="limoHail" class="overlay hidden">
+  <div class="card small hailCard">
+    <h2>🚘 Kingdom Stretch Limo</h2>
+    <p class="fine">Ride in the back down the Strip: leather, LED mood lights, mini bar, sunroof. Complimentary for resort guests.</p>
+    <div class="hailPick"><button id="hailWhite" class="hailC"><i style="background:#f4f2ee"></i>Pearl white</button><button id="hailBlack" class="hailC"><i style="background:#0c0c0e"></i>Midnight black</button></div>
+    <p id="hailNote" class="fine"></p>
+    <button class="ghost" data-close="limoHail">Not now</button>
+  </div>
+</div>
+
+<!-- v5: Sky Needle elevator ride -->
+<div id="cine" class="hidden hudLayer">
+  <div id="cineAlt">18 m</div><div id="cineTrack"><div id="cineBar"></div></div>
+  <button id="cineSkip">Skip ⏭</button>
+</div>
+
+<!-- v5: coin binoculars -->
+<div id="binoc" class="hidden hudLayer">
+  <canvas id="binocMask"></canvas>
+  <div id="binocLabels"></div>
+  <div id="binocCtl"><button id="binocOut">−</button><input id="binocZoom" type="range" min="1" max="16" step="0.1" value="2.5"><button id="binocIn">+</button><span id="binocZv">2.5×</span><button id="binocDone">Done</button></div>
+  <div class="binocHelp">Drag to pan · pinch, wheel or +/- to zoom</div>
+</div>
+
+<!-- v5: photo mode -->
+<div id="photo" class="hidden hudLayer">
+  <div id="phTop"><button id="phClose" title="Close (C)">✕</button><span id="phPlace"></span><button id="phGallery" title="Gallery (G)"><img id="phThumb" alt=""><b id="phCount">0</b></button></div>
+  <img id="phPrev" alt="">
+  <div id="phSide"><button id="phZin" title="Zoom in">＋</button><button id="phZout" title="Zoom out">－</button><button id="phFlip" title="Flip camera (F)">🔄</button></div>
+  <div id="phBottom">
+    <div id="phModes"><button id="phRear">📷 Rear</button><button id="phSelfie">🤳 Selfie</button></div>
+    <div id="phFilters"><button data-f="none">None</button><button data-f="warm">Warm</button><button data-f="bw">B&amp;W</button><button data-f="neon">Neon</button></div>
+    <div id="phRow"><button id="phMark" title="Watermark (W)"></button><button id="phShutter" title="Take photo (Space)"></button><button id="phSave" title="Save / share last photo">⤓ Save</button></div>
+  </div>
+</div>
+<div id="photoFlash"></div>
+
+<!-- v5: gallery -->
+<!-- v6.2: online players, chat and parties (website build) -->
+<div id="people" class="overlay hidden">
+  <div class="card small peopleCard">
+    <h2>👥 Online now</h2>
+    <p class="fine" id="pplSub"></p>
+    <div id="pplParty" class="partyBar"></div>
+    <div id="pplList" class="pplList"></div>
+    <div id="chatLog" class="chatLog"></div>
+    <div id="chatRow" class="chatRow hidden"><input id="chatIn" maxlength="80" placeholder="Say something to your party" enterkeyhint="send" autocomplete="off"><button id="chatSend" class="gold">Say</button></div>
+    <div id="chatQuick" class="chatQuick"></div>
+    <input id="inviteUrl" class="hidden" readonly aria-label="Invite link">
+    <p class="fine">Your name, look and position are shared with the players here through the TILEO server. Nothing is stored. Public Strips use preset phrases; private parties chat freely.</p>
+    <button class="ghost" data-close="people">Close</button>
+  </div>
+</div>
+<div id="account" class="overlay hidden">
+  <div class="card small acctCard"><div id="acctBody"></div><button class="ghost" data-close="account">Close</button></div>
+</div>
+
+<div id="gallery" class="overlay hidden">
+  <div class="card galCard">
+    <h2>📷 Kingdom Gallery</h2>
+    <p id="galInfo" class="fine"></p>
+    <div id="galGrid"></div>
+    <div class="galBtns"><button id="galNew">📸 Take a photo</button><button class="ghost" data-close="gallery">Close</button></div>
+  </div>
+</div>
+<div id="photoView" class="overlay hidden">
+  <div class="card pvCard">
+    <img id="pvImg" alt="">
+    <p id="pvMeta" class="fine"></p>
+    <div class="galBtns"><button id="pvSave">⤓ Save / share</button><button id="pvDel">🗑 Delete</button><button id="pvBack" class="ghost">◀ Gallery</button></div>
+  </div>
+</div>
+
+<div id="fade"><img id="fadeLion" src="assets/images/resort-logo.png" alt=""></div>
+<script type="module" src="main.js?v=1793692130"></script>
+</body>
+</html>

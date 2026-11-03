@@ -1,0 +1,515 @@
+// TILEO KINGDOM: Strip Life, playable prototype (Three.js, no build step)
+import * as THREE from 'three';
+import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793692130';
+import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793692130';
+import { createGfx, LOOK } from './gfx.js?v=1793692130';
+import { createAmbience } from './ambience.js?v=1793692130';
+import { initCasino } from './casino.js?v=1793692130';
+import { initNet } from './net.js?v=1793692130';
+import { makeCharacter, applyLook, animate, makeCar, STATUS, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793692130';
+import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793692130';
+import { PEOPLE_BASES } from './people_data.js?v=1793692130';
+import { buildStrip, updateWaters } from './world.js?v=1793692130';
+import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793692130';
+import { buildLimo } from './limo.js?v=1793692130';
+import { initPhoto } from './photo.js?v=1793692130';
+import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793692130';
+
+const $ = id => document.getElementById(id);
+const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window; if (isTouch) document.body.classList.add('touch');
+const SAVE_KEY = 'tileoKingdom.proto.v1';
+const save = Object.assign({ coins: 1000, owned: ['solid'], room: null, bonusDay: '', look: { name: 'Guest', skin: '#d9a47c', hair: '#1a1209', outfit: '#c9932e', style: 'solid', status: 'couple', hairLong: false, banded: false, body: 'f', hairStyle: 'long', beard: false } }, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}'));
+// v3 migration: older saves have no body type / hair style
+save.look = Object.assign({ body: 'f', beard: false }, save.look); if (!save.look.hairStyle || !HAIRSTYLES[save.look.body].includes(save.look.hairStyle)) save.look.hairStyle = save.look.hairLong ? 'long' : HAIRSTYLES[save.look.body][0];
+const PREF_KEY = 'tileoKingdom.prefs.v3'; const prefs = Object.assign({ mini: true, fp: false, ng: true, people: true }, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); const savePrefs = () => localStorage.setItem(PREF_KEY, JSON.stringify(prefs));
+let net = null; // v6.2 online (website build only)
+const persist = () => { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); if (net) net.saveSoon(); };
+
+// ---------- renderer / scene ----------
+initQuality();
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, Q.tier.pr)); renderer.setSize(innerWidth, innerHeight);
+$('app').appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.25, Q.tier.far);
+scene.fog = new THREE.Fog(0x0a0820, 300, 1600);
+LOOK.ng = prefs.ng !== false; PEOPLE.on = prefs.people !== false;
+const gfx = createGfx(renderer, scene, camera);
+gfx.st.onSlow = () => toast('Lighter effects: contact shadows turned off to keep the game smooth.');
+addEventListener('resize', () => gfx.resize());
+buildTextures();
+
+// ---------- areas ----------
+const areas = {};
+function defArea(id, o) { const g = new THREE.Group(); g.visible = false; scene.add(g); return areas[id] = Object.assign({ id, group: g, rects: [], aabbs: [], interacts: [], anim: [], water: [], outdoor: false, ceiling: null }, o); }
+const ctx = { save, toast, checkIn, openShop, openSlots, openElevator, exitToStrip, drink, dailyBonus, roomDoor, leaveRoom, openWardrobe, vipBooth, requestTrack, openBlackjack, openRoulette, rlFast: false };
+const strip = defArea('strip', { label: 'Las Vegas Strip', outdoor: true, envI: 1, rects: [[-200, 200, -640, 640]], music: null }); buildStrip(strip);
+const lobby = defArea('lobby', { label: 'Tileo Kingdom · Lobby & Casino', envI: 0.6, hemi: 0.55, bloom: { day: [0.45, 0.4, 0.9], sunset: [0.45, 0.4, 0.9], night: [0.55, 0.45, 0.85] }, rects: [[-19.5, 19.5, -24.5, 24.5], [20.5, 69.5, -24.5, 24.5], [19, 21, -10.5, 10.5]], ceiling: 11.5, bbox: [-19.6, 69.6, -24.6, 24.6], music: 'lobby' }); buildLobby(lobby, ctx);
+const pool = defArea('pool', { label: 'Pool Deck · Rooftop', outdoor: true, envI: 1.1, rects: [[-59.5, 59.5, -49.5, 49.5]], music: 'pool' }); buildPool(pool, ctx);
+const rooms = defArea('rooms', { label: 'Floor 24 · Suites', envI: 0.5, hemi: 1.1, bloom: { day: [0.3, 0.4, 0.95], sunset: [0.3, 0.4, 0.95], night: [0.3, 0.4, 0.95] }, rects: [[-3.5, 3.5, -41.5, 7.5]], ceiling: 4.7, bbox: [-3.6, 3.6, -41.6, 7.6], music: 'lobby' }); buildRooms(rooms, ctx);
+const room = defArea('room', { label: 'Your Suite', envI: 0.5, hemi: 1.1, bloom: { day: [0.3, 0.4, 0.95], sunset: [0.3, 0.4, 0.95], night: [0.3, 0.4, 0.95] }, rects: [[-7.5, 7.5, -9.5, 9.5]], ceiling: 4.7, bbox: [-7.6, 7.6, -9.6, 9.6], music: 'lobby', vol: 0.35 }); buildRoom(room, ctx);
+const club = defArea('club', { label: 'Mega Club · DJ Tileo', envI: 0.15, hemi: 0.25, bloom: { day: [0.75, 0.5, 0.8], sunset: [0.75, 0.5, 0.8], night: [0.75, 0.5, 0.8] }, rects: [[-29.5, 29.5, -29.5, 29.5]], ceiling: 13.5, bbox: [-29.6, 29.6, -29.6, 29.6], music: 'club' }); buildClub(club, ctx);
+const FLOORS = [['lobby', 'L · Lobby & Casino'], ['pool', 'P · Pool Deck (rooftop)'], ['rooms', '24 · Suites'], ['club', 'C · Mega Club']];
+
+// ---------- player / car ----------
+const player = makeCharacter(save.look, { important: true }); scene.add(player);
+const car = makeCar(); scene.add(car); car.position.set(45, 0, -346); car.rotation.y = 0;
+const state = { area: null, driving: false, emote: null, sprint: false, vy: 0, jy: 0, air: false, baseY: 0, lights: false, carSpeed: 0, carHeading: 0, night: true, tod: 'night', muted: false, started: false, ui: null, near: null, moving: 0 };
+const cam = { yaw: -PI / 2, pitch: 0.28, dist: 7, follow: true };
+// ---------- v5: Sky Needle deck (an area that reuses the Strip geometry at 238 m), stretch limo, photo mode ----------
+const C5 = { $, state, player, cam, camera, scene, save, prefs, savePrefs, CHAR, areas, renderer, toast, setCoins, transition, enterArea, showUI, closeUI, drink, setMusic, syncButtons, parkCar, toggleWheel };
+const needleA = defArea('needle', { label: 'Sky Needle · Observation Deck · 238 m', outdoor: true, envI: 1, rects: [], showStrip: true, floorY: 238, farMul: 1.5, bloom: { day: [0.14, 0.35, 1.6], sunset: [0.45, 0.42, 0.95], night: [0.55, 0.42, 0.92] }, music: 'lobby', vol: 0.4,
+  fog: { day: [700, 3600], sunset: [600, 3200], night: [520, 3000] } });
+const needle = buildNeedle(strip, needleA, C5);
+const limo = buildLimo(strip, C5);
+const photo = initPhoto(C5);
+const UI_CLOSE = { people: () => { const i = $('chatIn'); if (i) i.blur(); }, photo: () => photo.close(), binoc: () => { needle.closeBinoc(); document.body.classList.remove('binocMode'); }, gallery: () => {}, cine: () => {} };
+
+function enterArea(id, x, z, yaw) {
+  if (state.limo || limo.leaving.on) limo.abort();
+  if (state.area) { state.area.group.visible = false; if (state.area.showStrip) strip.group.visible = false; }
+  const A = state.area = areas[id]; A.group.visible = true; if (A.showStrip) strip.group.visible = true;
+  player.position.set(x, A.floorY || 0, z); if (yaw !== undefined) { cam.yaw = yaw; player.rotation.y = yaw + PI; }
+  car.visible = id === 'strip' || !!A.showStrip; player.visible = true; $('areaName').textContent = A.label; state.emote = null; state.air = false; state.jy = state.vy = 0; state.baseY = 0; renderMini(true);
+  applyEnv(); setMusic(); }
+function transition(fn) { $('fade').classList.add('on'); setTimeout(() => { fn(); setTimeout(() => $('fade').classList.remove('on'), 120); }, 420); }
+
+// ---------- environment (day / sunset / night) ----------
+const TOD_ICON = { day: '☀️', sunset: '🌇', night: '🌙' }, TOD_ORDER = ['day', 'sunset', 'night'];
+function applyEnv() {
+  const A = state.area, tod = state.tod, n = tod !== 'day'; state.night = tod === 'night'; TODS.cur = tod;
+  nightFx.forEach(f => f(n, tod));
+  if (!A) return;
+  gfx.applyArea(A, tod);
+  $('btnNight').textContent = TOD_ICON[tod];
+}
+function setTod(tod) { state.tod = tod; applyEnv(); }
+function setNight(n) { setTod(n ? 'night' : 'day'); }
+function cycleTod() { setTod(TOD_ORDER[(TOD_ORDER.indexOf(state.tod) + 1) % 3]); toast(`${TOD_ICON[state.tod]} ${state.tod[0].toUpperCase() + state.tod.slice(1)} on the Strip`); }
+function setQuality(m) { setMode(m, true); gfx.applyQuality(); applyEnv(); renderQualityUI(); }
+function renderQualityUI() { const box = $('qualBtns'); if (!box) return; box.innerHTML = '';
+  for (const m of ['auto', 'low', 'med', 'high']) { const b = document.createElement('button'); b.className = 'txt' + (Q.mode === m ? ' on' : ''); b.textContent = m === 'auto' ? `Auto (${TIERS[Q.auto].name})` : TIERS[m].name; b.onclick = () => setQuality(m); box.appendChild(b); }
+  $('qualInfo').textContent = `Rendering: ${Q.tier.name} · ${Q.tier.shadow ? 'soft shadows' : 'no shadows'} · ${Q.tier.bloom ? 'bloom' : 'no bloom'}${Q.tier.water ? ' · mirror water' : ''}${gfx.ng ? ' · Next-Gen' + (Q.tier.ao ? ' with contact shadows' : '') : ''}`;
+  const lb = $('lookBtns'); if (lb) { lb.innerHTML = ''; for (const [v, n] of [[true, 'Next-Gen'], [false, 'Classic']]) { const b = document.createElement('button'); b.className = 'txt' + ((prefs.ng !== false) === v ? ' on' : ''); b.textContent = n;
+    b.onclick = () => { prefs.ng = v; savePrefs(); gfx.setLook(v); applyEnv(); renderQualityUI(); }; lb.appendChild(b); }
+    $('lookInfo').textContent = Q.tier.bloom ? 'Next-Gen: real sky and reflections, contact shadows, sun glare, film grade, selfie depth of field.' : 'Next-Gen needs Med or High quality.'; }
+  const pb = $('peopleBtns'); if (pb) { pb.innerHTML = ''; for (const [v, n] of [[true, 'Realistic'], [false, 'Classic']]) { const b = document.createElement('button'); b.className = 'txt' + ((prefs.people !== false) === v ? ' on' : ''); b.textContent = n;
+    b.onclick = () => { prefs.people = v; savePrefs(); setPeople(v); renderQualityUI(); if (state.ui === 'creator') buildCreator(state.wardrobe); }; pb.appendChild(b); } } }
+
+// ---------- music ----------
+const tracks = {}; for (const k of ['lobby', 'pool', 'club']) { const a = new Audio(`assets/audio/${k}.mp3`); a.loop = true; a.preload = 'none'; a.volume = 0; tracks[k] = a; }
+let curTrack = null; const amb = createAmbience();
+function setMusic() {
+  if (!state.started) return; amb.resume(); amb.setMuted(state.muted); const A = state.area; let key = A.music; if (A.id === 'strip' && state.driving) key = 'pool'; if (state.limo) key = state.limo.radio;
+  const vol = state.muted ? 0 : state.limo ? 0.5 : (A.vol || 0.6);
+  for (const [k, a] of Object.entries(tracks)) { if (k === key) { a.volume = vol; if (a.paused) a.play().catch(() => {}); } else if (!a.paused) a.pause(); }
+  curTrack = key; }
+
+// ---------- input ----------
+const keys = {}; addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; keys[e.code] = true;
+  if (e.repeat) return;
+  if (e.code === 'Tab') { e.preventDefault(); state.ui === 'mapFull' ? closeUI() : openMap(); return; }
+  if (e.code === 'Escape') { if (wheelOpen) toggleWheel(false); else closeUI(); return; }
+  if (state.ui === 'photo') { if (photo.key(e)) return; }
+  if (state.ui === 'binoc') { if (e.code === 'Equal' || e.code === 'NumpadAdd') needle.setZoom(needle.bz.zoom * 1.4); if (e.code === 'Minus' || e.code === 'NumpadSubtract') needle.setZoom(needle.bz.zoom / 1.4); if (e.code === 'KeyE' || e.code === 'Enter') closeUI(); return; }
+  if (e.code === 'KeyC' && (!state.ui || state.ui === 'phone') && state.started && !state.cine) { photo.open(); return; }
+  if (state.limo && !state.ui) { const k = e.code; if (k === 'KeyV') limo.cycleView(); else if (k === 'Space') { e.preventDefault(); limo.toggleStand(); } else if (k === 'KeyB' || k === 'KeyR') limo.cycleRadio(); else if (k === 'KeyX' || k === 'KeyE') limo.end(); else if (k === 'KeyO') limo.toggleWindows(); else if (k === 'KeyN') cycleTod(); else if (k === 'KeyM') toggleMute(); else if (k === 'KeyK') toggleMini();
+    const dg = /^Digit([1-8])$/.exec(k); if (dg && state.limo.stand) state.emote = EMOTE_KEYS[+dg[1] - 1]; return; }
+  if (e.code === 'KeyP') { state.ui === 'phone' ? closeUI() : openPhone(); return; }
+  if (e.code === 'KeyT') { if (state.ui === 'teleport') closeUI(); else if (!state.ui || state.ui === 'mapFull' || state.ui === 'phone') openTeleport(); return; }
+  if (e.code === 'KeyY' && net && net.online) { if (state.ui === 'people') closeUI(); else if ((!state.ui || state.ui === 'phone' || state.ui === 'mapFull') && state.started) { e.preventDefault(); net.openPeople(); } return; }
+  if (state.ui && state.ui !== 'mapFull') return;
+  if (e.code === 'Space') { e.preventDefault(); state.driving ? horn() : jump(); }
+  if (e.code === 'KeyE' || e.code === 'Enter') doInteract(); if (e.code === 'KeyG') toggleDance(); if (e.code === 'KeyN') cycleTod(); if (e.code === 'KeyM') toggleMute();
+  if (e.code === 'KeyR') toggleSprint(); if (e.code === 'KeyQ') toggleWheel(); if (e.code === 'KeyV') toggleCam(); if (e.code === 'KeyK') toggleMini();
+  if (e.code === 'KeyH') horn(); if (e.code === 'KeyL') toggleLights();
+  const dg = /^Digit([1-8])$/.exec(e.code); if (dg) setEmote(EMOTE_KEYS[+dg[1] - 1]); });
+addEventListener('keyup', e => keys[e.code] = false);
+const joy = { x: 0, y: 0, id: null }; const jb = $('joy'), jk = $('joyKnob');
+jb.addEventListener('pointerdown', e => { joy.id = e.pointerId; jb.setPointerCapture(e.pointerId); joyMove(e); e.preventDefault(); });
+jb.addEventListener('pointermove', e => { if (e.pointerId === joy.id) joyMove(e); });
+const joyEnd = e => { if (e.pointerId === joy.id) { joy.id = null; joy.x = joy.y = 0; jk.style.transform = ''; } }; jb.addEventListener('pointerup', joyEnd); jb.addEventListener('pointercancel', joyEnd);
+function joyMove(e) { const r = jb.getBoundingClientRect(); let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2); const m = Math.hypot(dx, dy), max = r.width / 2 - 20; if (m > max) { dx *= max / m; dy *= max / m; } joy.x = dx / max; joy.y = -dy / max; jk.style.transform = `translate(${dx}px,${dy}px)`; }
+const drag = { id: null, x: 0, y: 0 }; const cv = renderer.domElement;
+cv.addEventListener('pointerdown', e => { if (drag.id !== null) return; drag.id = e.pointerId; drag.x = e.clientX; drag.y = e.clientY; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e => { if (e.pointerId !== drag.id) return; const ddx = e.clientX - drag.x, ddy = e.clientY - drag.y;
+  if (state.ui === 'photo' || state.ui === 'binoc' || state.limo) { if (state.ui === 'photo') photo.drag(ddx, ddy); else if (state.ui === 'binoc') needle.binocDrag(ddx, ddy); else limo.look(ddx, ddy); drag.x = e.clientX; drag.y = e.clientY; return; }
+  cam.yaw -= (e.clientX - drag.x) * 0.006; cam.pitch = Math.min(1.2, Math.max(prefs.fp ? -0.9 : -0.15, cam.pitch + (e.clientY - drag.y) * 0.004)); drag.x = e.clientX; drag.y = e.clientY; cam.manual = 1.5; });
+const pinch = new Map(); let pinchD = 0;
+addEventListener('pointerdown', e => { if (state.ui === 'binoc' || state.ui === 'photo') { pinch.set(e.pointerId, [e.clientX, e.clientY]); if (pinch.size === 2) { const [a, b] = [...pinch.values()]; pinchD = Math.hypot(a[0] - b[0], a[1] - b[1]); } } });
+addEventListener('pointermove', e => { if (!pinch.has(e.pointerId)) return; pinch.set(e.pointerId, [e.clientX, e.clientY]); if (pinch.size !== 2) return; const [a, b] = [...pinch.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (!pinchD) { pinchD = d; return; }
+  const k = d / pinchD; if (Math.abs(k - 1) > 0.04) { if (state.ui === 'binoc') needle.setZoom(needle.bz.zoom * k); else if (state.ui === 'photo') photo.zoom(k > 1 ? -1 : 1); pinchD = d; } });
+const pinchEnd = e => { pinch.delete(e.pointerId); pinchD = 0; }; addEventListener('pointerup', pinchEnd); addEventListener('pointercancel', pinchEnd);
+const dragEnd = e => { if (e.pointerId === drag.id) drag.id = null; }; cv.addEventListener('pointerup', dragEnd); cv.addEventListener('pointercancel', dragEnd);
+cv.addEventListener('wheel', e => { if (state.ui === 'photo') return photo.zoom(e.deltaY); if (state.ui === 'binoc') return needle.setZoom(needle.bz.zoom * (e.deltaY > 0 ? 0.85 : 1.18)); cam.dist = Math.min(state.driving ? 18 : 14, Math.max(2.5, cam.dist + e.deltaY * 0.01)); }, { passive: true });
+$('btnAct').onclick = doInteract; $('btnDance').onclick = toggleDance; $('btnNight').onclick = cycleTod; $('btnMute').onclick = toggleMute; $('btnHelp').onclick = () => showUI('help');
+$('btnJump').onclick = () => jump(); $('btnHorn').onclick = () => horn(); $('btnLights').onclick = () => toggleLights(); $('btnSprint').onclick = () => toggleSprint(); $('btnEmote').onclick = () => toggleWheel();
+$('btnCam').onclick = () => toggleCam(); $('btnMap').onclick = () => toggleMini(); $('btnPhone').onclick = () => openPhone(); $('btnTp').onclick = () => openTeleport(); $('miniWrap').onclick = () => openMap(); $('btnPhoto').onclick = () => photo.open();
+$('binocDone').onclick = () => closeUI(); $('hailWhite').onclick = () => hailLimo('white'); $('hailBlack').onclick = () => hailLimo('black');
+// stop HUD buttons from also starting a camera drag / double-tap zoom
+document.querySelectorAll('#hud button, #miniWrap').forEach(b => b.addEventListener('pointerdown', e => e.stopPropagation()));
+// ---------- v3 controller actions ----------
+const EMOTE_KEYS = Object.keys(EMOTES); let wheelOpen = false;
+function setEmote(k) { if (state.limo && state.limo.stand && EMOTES[k]) { state.emote = state.emote === k ? null : k; return; } if (state.driving || state.limo || state.ui || !state.started || !EMOTES[k]) return; toggleWheel(false); state.emote = state.emote === k ? null : k;
+  if (state.emote === 'dance') toast(state.area.id === 'club' && inRect(player.position, club.danceRect) ? 'Dance streak! +5 coins every 10s on the floor' : 'Showing off your moves');
+  else if (state.emote) toast(`${EMOTES[k][2]} ${EMOTES[k][1]}`); syncButtons(); }
+function toggleWheel(on = !wheelOpen) { if (on && (state.driving || !state.started)) on = false; wheelOpen = on; const w = $('emoteWheel'); w.classList.toggle('hidden', !on); $('btnEmote').classList.toggle('on', on);
+  if (on) { w.innerHTML = ''; EMOTE_KEYS.forEach((k, i) => { const a = -PI / 2 - (i / EMOTE_KEYS.length) * PI * 2, b = document.createElement('button');
+    b.style.left = (125 + Math.cos(a) * 92 - 31) + 'px'; b.style.top = (125 + Math.sin(a) * 92 - 31) + 'px'; b.className = state.emote === k ? 'on' : '';
+    b.innerHTML = `${EMOTES[k][2]}<span>${i + 1} · ${EMOTES[k][1]}</span>`; b.addEventListener('pointerdown', e => e.stopPropagation()); b.onclick = () => setEmote(k); w.appendChild(b); }); } }
+function jump() { if (state.driving || state.limo || state.ui || !state.started || state.air) return; if (waterDepth(player.position) >= 0.8) return; state.air = true; state.vy = 5.2; state.jy = 0.001; state.emote = null; syncButtons(); }
+function toggleSprint() { if (state.driving) return; state.sprint = !state.sprint; syncButtons(); toast(state.sprint ? '🏃 Sprint on' : '🚶 Sprint off'); }
+function toggleCam() { prefs.fp = !prefs.fp; savePrefs(); if (!prefs.fp) cam.pitch = Math.max(-0.15, cam.pitch); syncButtons(); toast(prefs.fp ? '🎥 First-person view' : '🎥 Third-person view'); }
+function toggleMini(on = !prefs.mini) { prefs.mini = on; savePrefs(); syncButtons(); renderMini(true); }
+function toggleLights(on = !state.lights) { if (!state.driving && on) return; state.lights = on; const b = car.userData.beam, hm = car.userData.headMat;
+  if (b) { b.visible = Q.tier.shadow !== false || Q.key !== 'low'; b.intensity = on ? 180 : 0; if (Q.key === 'low') b.visible = false; }
+  if (hm) hm.emissiveIntensity = on ? 4 : 0.6; syncButtons(); }
+let actx = null; function horn() { if (!state.driving) return; try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); const t0 = actx.currentTime, gn = actx.createGain();
+  gn.gain.setValueAtTime(0.0001, t0); gn.gain.exponentialRampToValueAtTime(state.muted ? 0.0001 : 0.22, t0 + 0.02); gn.gain.setValueAtTime(state.muted ? 0.0001 : 0.22, t0 + 0.3); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.38);
+  const f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1800; f.connect(gn); gn.connect(actx.destination);
+  for (const hz of [415, 523]) { const o = actx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz; o.connect(f); o.start(t0); o.stop(t0 + 0.4); } } catch (e) {}
+  $('btnHorn').classList.add('on'); setTimeout(() => $('btnHorn').classList.remove('on'), 300); }
+function syncButtons() { const d = state.driving;
+  $('btnJump').classList.toggle('hidden', d); $('btnHorn').classList.toggle('hidden', !d); $('btnEmote').classList.toggle('hidden', d); $('btnLights').classList.toggle('hidden', !d);
+  $('btnSprint').classList.toggle('hidden', d); $('btnDance').classList.toggle('hidden', d);
+  $('btnSprint').classList.toggle('on', state.sprint); $('btnDance').classList.toggle('on', state.emote === 'dance'); $('btnLights').classList.toggle('on', state.lights);
+  $('btnMap').classList.toggle('on', prefs.mini); $('hud').classList.toggle('nomini', !prefs.mini); $('btnCam').textContent = prefs.fp ? '👁️' : '🎥'; }
+function openPhone() { if (!state.started) return; toggleWheel(false); showUI('phone'); }
+document.querySelectorAll('.appGrid button').forEach(b => b.onclick = () => { const a = b.dataset.app; closeUI();
+  ({ map: openMap, emote: () => toggleWheel(true), cam: toggleCam, mini: () => toggleMini(), tod: cycleTod, mute: toggleMute, help: () => showUI('help'), credits: openCredits, teleport: openTeleport, limo: () => openHail(true), photo: () => photo.open(), gallery: () => photo.openGallery(), people: () => net && net.openPeople(), account: () => net && net.openAuth('in') })[a](); });
+function openCredits() { const sk = SKYLINE_CREDITS.map(c => `<li><b>${c.tod} suite view:</b> “${c.title}” by ${c.author}, <a href="${c.url}" target="_blank" rel="noopener">Wikimedia Commons</a>, ${c.license} (<a href="https://creativecommons.org/licenses/${c.license.includes('3.0') ? 'by-sa/3.0' : 'by-sa/2.0'}/" target="_blank" rel="noopener">license</a>). Resized &amp; re-encoded.</li>`).join('');
+  $('creditsBody').innerHTML = `<h3>Game</h3><p>TILEO KINGDOM: Strip Life, an original parody game. All resort, casino &amp; brand names are fictional. Play coins only, with no real-money gambling. 18+.</p>
+  <h3>Realistic people</h3><ul><li>Bodies, faces and outfits adapted from the <a href="https://github.com/microsoft/Microsoft-Rocketbox" target="_blank" rel="noopener">Microsoft Rocketbox Avatar Library</a> (MIT License, © Microsoft Corporation): textures resized, outfits/skin/beards recoloured at runtime, meshes converted to glTF. They are driven by the Quaternius animations below (no Mixamo motion).</li></ul>
+  <h3>Surfaces &amp; lighting</h3><ul><li>Asphalt, concrete, desert rock, travertine, marble, casino carpet and palm textures: generated for this game (tools-src/gen_textures.py), no photos.</li><li>Physical sky: three.js Sky addon (Preetham scattering, MIT). SMAA and bokeh depth of field: three.js addons (MIT).</li></ul>
+  <h3>Characters &amp; animation</h3><ul><li>Universal Base Characters by <a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0)</li><li>Universal Animation Library 1 &amp; 2 by Quaternius (CC0)</li><li>DJ Tileo lion head, outfits, wristbands: original, procedural</li></ul>
+  <h3>Las Vegas skyline photos (suite windows)</h3><ul>${sk}</ul>
+  <h3>Engine</h3><p><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> r186 (MIT), meshoptimizer decoder (MIT).</p><h3>Music</h3><p>Original tracks supplied for TILEO KINGDOM.</p>`;
+  showUI('credits'); }
+// ---------- mini-map + full Strip map ----------
+const miniCv = $('miniMap'), mctx = miniCv.getContext('2d'), mapCv = $('mapCanvas'), fctx = mapCv.getContext('2d');
+const lmk = n => strip.landmarks.find(l => l.name === n);
+const NORTH = (() => { const a = lmk('Luxe Pyramid'), b = lmk('Sky Needle'); if (!a || !b) return { x: 0, z: -1 }; const dx = b.x - a.x, dz = b.z - a.z, m = Math.hypot(dx, dz); return { x: dx / m, z: dz / m }; })();
+const EAST = { x: -NORTH.z, z: NORTH.x };
+function drawPlan(g, A, P, s, full) { // P(x,z) -> [sx,sy]; s = px per metre
+  const poly = (pts, fill, stroke) => { g.beginPath(); pts.forEach(([x, z], i) => { const [u, v] = P(x, z); i ? g.lineTo(u, v) : g.moveTo(u, v); }); g.closePath(); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.stroke(); } };
+  const rect = (r, fill, stroke) => poly([[r[0], r[2]], [r[1], r[2]], [r[1], r[3]], [r[0], r[3]]], fill, stroke);
+  if (A.id === 'strip') { rect([-200, 200, -650, 650], '#2a2116'); rect([-22, 22, -650, 650], '#3b3328'); rect([-14, 14, -650, 650], '#15151a');
+    g.setLineDash([6, 6]); g.strokeStyle = '#d8b45a88'; g.lineWidth = 1; const [a1, b1] = P(0, -650), [a2, b2] = P(0, 650); g.beginPath(); g.moveTo(a1, b1); g.lineTo(a2, b2); g.stroke(); g.setLineDash([]); }
+  else if (A.drawMap) A.drawMap(g, P, s, full);
+  else for (const r of A.rects) rect(r, '#3a2c1c', '#c9932e66');
+  for (const w of A.water || []) { if (w.rect) rect(w.rect, '#1f6f8bcc'); else if (w.circle) { const [u, v] = P(w.circle[0], w.circle[1]); g.beginPath(); g.arc(u, v, w.circle[2] * s, 0, PI * 2); g.fillStyle = '#1f6f8bcc'; g.fill(); } }
+  g.lineWidth = 1; for (const b of A.aabbs) { if ((b[1] - b[0]) * (b[3] - b[2]) < (A.id === 'strip' ? 6 : 0.3)) continue; rect(b, A.id === 'strip' ? '#5a4a35' : '#6b5638', '#00000066'); }
+  if (A.id === 'strip') { for (const l of strip.landmarks) { const [u, v] = P(l.x, l.z), tk = l.name === 'TILEO KINGDOM';
+      g.beginPath(); g.arc(u, v, tk ? 7 : 4.5, 0, PI * 2); g.fillStyle = tk ? '#ffcf4a' : '#ff6ec7'; g.fill(); g.strokeStyle = '#000'; g.stroke();
+      if (tk) { g.font = `${full ? 18 : 12}px sans-serif`; g.textAlign = 'center'; g.fillText('👑', u, v - 9); }
+      if (full) { g.font = `bold ${tk ? 17 : 14}px sans-serif`; g.textAlign = u > g.canvas.width * 0.6 ? 'right' : 'left'; g.fillStyle = tk ? '#ffcf4a' : '#f3e6c4'; g.strokeStyle = '#000'; g.lineWidth = 3; const tx = u + (g.textAlign === 'left' ? 10 : -10); g.strokeText(l.name, tx, v + 5); g.fillText(l.name, tx, v + 5); g.lineWidth = 1; } }
+    { const [u, v] = P(NEEDLE_X, NEEDLE_Z); if (full) { g.font = 'bold 14px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#8fd0ff'; g.strokeStyle = '#000'; g.lineWidth = 3; g.strokeText('🗼 Top · 238 m', u, v - 22); g.fillText('🗼 Top · 238 m', u, v - 22); g.lineWidth = 1; } }
+    if (limo.grp.visible) { const [u, v] = P(limo.grp.position.x, limo.grp.position.z); g.font = `${full ? 20 : 14}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🚘', u, v); g.textBaseline = 'alphabetic'; }
+    { const [u, v] = P(17, -330); if (full) { g.font = 'bold 13px sans-serif'; g.textAlign = 'right'; g.fillStyle = '#f4f2ee'; g.fillText('🚘 limo stand', u - 26, v + 22); } }
+    if (car.visible) { const [u, v] = P(car.position.x, car.position.z); g.font = `${full ? 20 : 14}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🚗', u, v); g.textBaseline = 'alphabetic'; } }
+  else for (const it of A.interacts) { const [u, v] = P(it.x, it.z); g.beginPath(); g.arc(u, v, full ? 4 : 2.5, 0, PI * 2); g.fillStyle = '#ffcf4a'; g.fill(); }
+}
+function arrow(g, u, v, ang, sz) { g.save(); g.translate(u, v); g.rotate(ang); g.beginPath(); g.moveTo(0, -sz); g.lineTo(sz * 0.7, sz * 0.75); g.lineTo(0, sz * 0.35); g.lineTo(-sz * 0.7, sz * 0.75); g.closePath(); g.fillStyle = '#fff'; g.fill(); g.strokeStyle = '#c9932e'; g.lineWidth = 2; g.stroke(); g.restore(); }
+let miniAcc = 0;
+function renderMini(force) { if (!prefs.mini || !state.area || !state.started && !force) return; const A = state.area, W = miniCv.width, c = W / 2, p = state.driving ? car.position : player.position;
+  const range = A.id === 'strip' ? (state.driving || state.limo ? 230 : 140) : A.id === 'needle' ? 40 : 32, s = c / range, yaw = cam.yaw;
+  const rt = { x: Math.cos(yaw), z: -Math.sin(yaw) }, fw = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
+  const P = (x, z) => { const dx = x - p.x, dz = z - p.z; return [c + (dx * rt.x + dz * rt.z) * s, c - (dx * fw.x + dz * fw.z) * s]; };
+  mctx.setTransform(1, 0, 0, 1, 0, 0); mctx.fillStyle = '#0b0906'; mctx.fillRect(0, 0, W, W); drawPlan(mctx, A, P, s, false);
+  const h = state.driving ? state.carHeading : player.rotation.y, f = { x: Math.sin(h), z: Math.cos(h) };
+  arrow(mctx, c, c, Math.atan2(f.x * rt.x + f.z * rt.z, f.x * fw.x + f.z * fw.z), 11);
+  const nx = NORTH.x * rt.x + NORTH.z * rt.z, ny = -(NORTH.x * fw.x + NORTH.z * fw.z), n = $('miniN'), R = 44; // % of the wrap
+  n.style.left = (50 + nx * R) + '%'; n.style.top = (50 + ny * R) + '%'; n.style.transform = 'translate(-50%,-50%)'; }
+function openMap() { if (!state.started) return; toggleWheel(false); showUI('mapFull'); renderFullMap(); }
+function renderFullMap() { const A = state.area, g = fctx, Wd = mapCv.width, Ht = mapCv.height; g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#0b0906'; g.fillRect(0, 0, Wd, Ht);
+  const outside = A.id === 'strip', src = outside ? [[-200, -650], [200, -650], [200, 650], [-200, 650]] : (A.mapRects || A.rects).flatMap(r => [[r[0], r[2]], [r[1], r[3]], [r[0], r[3]], [r[1], r[2]]]);
+  const north = outside ? NORTH : { x: 0, z: -1 }, east = { x: -north.z, z: north.x };
+  const pr = (x, z) => [x * east.x + z * east.z, -(x * north.x + z * north.z)]; const pts = src.map(([x, z]) => pr(x, z));
+  const mnx = Math.min(...pts.map(q => q[0])), mxx = Math.max(...pts.map(q => q[0])), mny = Math.min(...pts.map(q => q[1])), mxy = Math.max(...pts.map(q => q[1]));
+  const s = Math.min((Wd - 40) / (mxx - mnx), (Ht - 40) / (mxy - mny)), ox = Wd / 2 - (mnx + mxx) / 2 * s, oy = Ht / 2 - (mny + mxy) / 2 * s;
+  const P = (x, z) => { const [u, v] = pr(x, z); return [ox + u * s, oy + v * s]; };
+  drawPlan(g, A, P, s, true);
+  mapPins = tpPins(A, P, g);
+  const p = state.driving ? car.position : player.position, [u, v] = P(p.x, p.z), h = state.driving ? state.carHeading : player.rotation.y, f = { x: Math.sin(h), z: Math.cos(h) };
+  arrow(g, u, v, Math.atan2(f.x * east.x + f.z * east.z, f.x * north.x + f.z * north.z), 14);
+  g.font = 'bold 16px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#ffcf4a'; g.fillText('▲ N', Wd - 34, 28);
+  $('mapTitle').textContent = outside ? 'Las Vegas Strip' : A.label; $('mapLegend').textContent = outside ? '▲ you · 🚗 convertible · 🚘 limo · 👑 TILEO KINGDOM · 🗼 Sky Needle top · pink = parody landmarks · north is up · tap a pin to teleport' : '▲ you · gold dots = things to do · tap a 🌀 pin to teleport'; }
+function toggleMute() { state.muted = !state.muted; $('btnMute').textContent = state.muted ? '🔇' : '🔊'; setMusic(); }
+function toggleDance() { setEmote('dance'); }
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => closeUI());
+function showUI(id) { closeUI(); state.ui = id; $(id).classList.remove('hidden'); if (id === 'binoc') document.body.classList.add('binocMode'); }
+function closeUI() { if (state.ui) { $(state.ui).classList.add('hidden'); const f = UI_CLOSE[state.ui]; state.ui = null; if (f) f(); } state.ui = null; }
+
+// ---------- HUD ----------
+let toastT = 0; function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 3200); }
+function setCoins(v) { save.coins = Math.max(0, Math.round(v)); $('coinVal').textContent = save.coins.toLocaleString(); persist(); }
+function updateBand() { const L = save.look, s = STATUS[L.status]; $('bandDot').style.background = L.banded ? s.c : '#555'; $('bandDot').style.color = L.banded ? s.c : '#555';
+  $('bandTxt').textContent = L.banded ? `${L.name} · Room ${save.room} · ${s.n} wristband` : `${L.name} · ${s.n} · no wristband (check in at lobby)`; }
+
+// ---------- interactions ----------
+function inRect(p, r) { return p.x >= r[0] && p.x <= r[1] && p.z >= r[2] && p.z <= r[3]; }
+function nearest() { if (state.limo || state.cine) return null; if (state.area.id === 'strip') { if (state.driving) return { label: 'Exit car', act: exitCar };
+    if (Math.hypot(player.position.x - car.position.x, player.position.z - car.position.z) < 4) return { label: 'Drive convertible', act: enterCar };
+    const d = strip.tileo; if (Math.hypot(player.position.x - (d.doorX - 3), player.position.z - d.doorZ) < 6) return { label: 'Enter TILEO KINGDOM', act: enterTower };
+    if (!state.limo && Math.hypot(player.position.x - 17, player.position.z + 330) < 5) return { label: 'Hail the stretch limo 🚘', act: () => openHail(false) };
+    const k = strip.needleKiosk; if (Math.hypot(player.position.x - k.x, player.position.z - k.z) < k.r) return { label: 'Ride the Sky Needle elevator ▲', act: () => needle.rideUp() }; return null; }
+  let best = null, bd = 1e9; for (const it of state.area.interacts) { const d = Math.hypot(player.position.x - it.x, player.position.z - it.z); if (d < it.r && d < bd) { bd = d; best = it; } } return best; }
+function doInteract() { if (state.ui || !state.started) return; const it = state.near; if (it) it.act(); }
+function enterTower() { transition(() => enterArea('lobby', lobby.spawnDoor.x, lobby.spawnDoor.z, lobby.spawnDoor.yaw)); }
+function exitToStrip() { transition(() => enterArea('strip', strip.tileo.doorX - 8, strip.tileo.doorZ, PI / 2)); }
+function enterCar() { state.driving = true; state.emote = null; toggleWheel(false); state.air = false; state.jy = 0; setTimeout(syncButtons); player.visible = true; state.carHeading = car.rotation.y; cam.dist = 11; toast('Convertible rented: W/S or joystick to drive, A/D to steer. Car radio on.'); setMusic(); }
+function exitCar() { state.driving = false; state.carSpeed = 0; const h = state.carHeading; player.position.set(car.position.x + Math.cos(h) * 2.2, 0, car.position.z - Math.sin(h) * 2.2); player.rotation.set(0, h, 0); cam.dist = 7; toggleLights(false); syncButtons(); setMusic(); }
+function checkIn() {
+  const L = save.look;
+  if (!save.room) { save.room = 2401 + Math.floor(Math.random() * 10); L.banded = true; applyLook(player, L); persist(); updateBand();
+    toast(`Welcome to TILEO KINGDOM, ${L.name}. Suite ${save.room} on floor 24. Your ${STATUS[L.status].n.toLowerCase()} wristband is on: take the elevator to Floor 24.`); }
+  else toast(`You're checked in: Suite ${save.room}, floor 24. ${STATUS[L.status].n} wristband active.`);
+  showKeycard(); }
+function showKeycard() { const L = save.look, s = STATUS[L.status]; $('kcName').textContent = L.name; $('kcRoom').textContent = `${save.room} · Floor 24`;
+  $('kcBand').textContent = s.n; $('kcDot').style.background = s.c; showUI('keycard'); }
+function openElevator() { const A = state.area; if (A.elevDoor) A.elevDoor.force = 2;
+  const box = $('elevBtns'); box.innerHTML = ''; for (const [id, name] of FLOORS) { const b = document.createElement('button'); b.textContent = name; b.disabled = id === A.id;
+    b.onclick = () => { closeUI(); if (id === 'rooms' && !save.room) { toast('Floor 24 is for guests: check in at the front desk first.'); return; } transition(() => { const s = areas[id].spawnElev; enterArea(id, s.x, s.z, s.yaw); areas[id].elevDoor && (areas[id].elevDoor.force = 1.5); }); }; box.appendChild(b); }
+  setTimeout(() => showUI('elev'), 250); }
+function roomDoor(num, side, z) { if (!save.room) return toast('Check in at the lobby desk to get a suite.'); if (num !== save.room) return toast(`Not your suite. Yours is ${save.room} (green light).`);
+  state.lastDoor = { side, z }; transition(() => enterArea('room', 0, 7.5, 0)); }
+function leaveRoom() { const d = state.lastDoor || { side: -1, z: -2 }; transition(() => enterArea('rooms', d.side * 1.8, d.z, d.side > 0 ? PI / 2 : -PI / 2)); }
+const DRINKS = ["Tiger's Kiss", 'Gold Mane Margarita', 'Velvet Roar', 'Midnight Mojito', 'Jungle Spritz'];
+function drink(where) { if (save.coins < 15) return toast('Not enough coins. Visit the Coin Cage for a daily bonus.'); setCoins(save.coins - 15); toast(`${DRINKS[Math.floor(Math.random() * DRINKS.length)]} from the ${where} (-15 coins). Cheers! 🥂`); }
+function dailyBonus() { const d = new Date().toDateString(); if (save.bonusDay === d) return toast('Daily bonus already collected. Come back tomorrow. (Play coins only, no cash-out.)'); save.bonusDay = d; setCoins(save.coins + 500); toast('+500 Kingdom Coins daily bonus!'); }
+function vipBooth() { if (state.vip) return toast('Your VIP booth is reserved all night.'); if (save.coins < 300) return toast('VIP booth needs 300 coins.'); setCoins(save.coins - 300); state.vip = true; toast('VIP bottle-service booth booked (-300). Sparklers on the way! ✨'); }
+function requestTrack() { const order = ['club', 'pool', 'lobby']; club.music = order[(order.indexOf(club.music) + 1) % 3]; setMusic(); toast(`DJ Tileo: "Say less!" Now spinning the ${club.music} track.`); }
+
+// ---------- slots ----------
+const SYM = ['🍒', '💎', '7', '👑', '🐯', '🦁'], W = [30, 22, 16, 12, 10, 7], PAY = { '🦁': 50, '🐯': 25, '👑': 15, '7': 10, '💎': 8, '🍒': 5 };
+let bet = 10, spinning = false;
+document.querySelectorAll('.bet').forEach(b => b.onclick = () => { document.querySelectorAll('.bet').forEach(x => x.classList.remove('on')); b.classList.add('on'); bet = +b.dataset.bet; });
+function roll() { let r = Math.random() * W.reduce((a, b) => a + b); for (let i = 0; i < SYM.length; i++) { r -= W[i]; if (r < 0) return SYM[i]; } return SYM[0]; }
+let casinoUI = null; const casino = () => casinoUI || (casinoUI = initCasino({ save, setCoins, showUI, closeUI, toast, chime: k => amb.chime(k), onSpin: on => { ctx.rlFast = on; } }));
+function openBlackjack() { casino().openBlackjack(); }
+function openRoulette() { casino().openRoulette(); }
+function openSlots() { showUI('slots'); $('slotMsg').textContent = `Bet ${bet}. Balance ${save.coins}. Play coins only.`; }
+$('spin').onclick = () => { if (spinning) return; if (save.coins < bet) { $('slotMsg').textContent = 'Not enough coins: try the Coin Cage daily bonus.'; return; }
+  spinning = true; setCoins(save.coins - bet); const reels = [...document.querySelectorAll('.reel')]; const res = [roll(), roll(), roll()]; let t = 0;
+  const iv = setInterval(() => { t++; reels.forEach((r, i) => { if (t < 8 + i * 5) r.textContent = SYM[Math.floor(Math.random() * 6)]; else r.textContent = res[i]; });
+    if (t >= 18) { clearInterval(iv); spinning = false; let win = 0;
+      if (res[0] === res[1] && res[1] === res[2]) win = bet * PAY[res[0]]; else if (res.filter(s => s === '🦁').length === 2) win = bet * 2; else if (new Set(res).size === 2) win = bet;
+      if (win) setCoins(save.coins + win); amb.chime(win >= bet * 10 ? 'big' : win ? 'win' : 'spin'); $('slotMsg').textContent = win ? (win >= bet * 10 ? `🎉 JACKPOT! +${win} coins` : `Winner: +${win} coins`) : 'No win. Spin again?'; } }, 70); };
+
+// ---------- shop / creator / wardrobe ----------
+function openShop() { const L = $('shopList'); L.innerHTML = '';
+  for (const [k, s] of Object.entries(STYLES)) { if (k === 'solid') continue; const own = save.owned.includes(k); const d = document.createElement('div'); d.className = 'item';
+    const col = { swim: '#1f6f8b', white: '#fff', tiger: '#e8891c', gold: '#ffc94a' }[k];
+    d.innerHTML = `<div class="sq" style="background:${col}"></div><div style="flex:1">${s.n}<br><small>${own ? 'Owned' : s.price + ' coins'}</small></div>`;
+    const b = document.createElement('button'); b.textContent = own ? (save.look.style === k ? 'Wearing' : 'Wear') : 'Buy';
+    b.onclick = () => { if (!own) { if (save.coins < s.price) return toast('Not enough coins.'); setCoins(save.coins - s.price); save.owned.push(k); toast(`Bought ${s.n}!`); } save.look.style = k; applyLook(player, save.look); persist(); openShop(); };
+    d.appendChild(b); L.appendChild(d); } showUI('shop'); }
+const SKINS = ['#f6d7bd', '#f1c9a5', '#d9a47c', '#b07a52', '#8a5636', '#5e3a22', '#3d2516'], HAIRS = ['#1a1209', '#3b2412', '#7a4a1e', '#d8b45a', '#f0e0b0', '#b8321c', '#e8e0d0', '#7b2cbf', '#ff6ec7'], OUTFITS = ['#c9932e', '#111111', '#ffffff', '#b0102a', '#ff7a1a', '#7b2cbf', '#1f6f8b', '#e83e8c', '#2f7a32'];
+function swatches(id, list, key) { const el = $(id); el.innerHTML = ''; list.forEach(c => { const b = document.createElement('button'); b.style.background = c; if (save.look[key] === c) b.classList.add('on'); b.onclick = () => { save.look[key] = c; applyLook(player, save.look); swatches(id, list, key); }; el.appendChild(b); }); }
+function buildCreator(wardrobe) {
+  $('crTitle').textContent = wardrobe ? 'Wardrobe' : 'Create your guest'; $('crDone').textContent = wardrobe ? 'Done' : 'Hit the Strip'; $('crName').value = save.look.name;
+  swatches('swSkin', SKINS, 'skin'); swatches('swHair', HAIRS, 'hair'); swatches('swOutfit', OUTFITS, 'outfit');
+  const bd = $('swBody'); bd.innerHTML = ''; for (const [k, n] of [['f', 'Female'], ['m', 'Male']]) { const b = document.createElement('button'); b.className = 'txt' + (save.look.body === k ? ' on' : ''); b.textContent = n;
+    b.onclick = () => { if (save.look.body === k) return; save.look.body = k; save.look.face = ''; save.look.cut = ''; if (!HAIRSTYLES[k].includes(save.look.hairStyle)) save.look.hairStyle = HAIRSTYLES[k][0]; applyLook(player, save.look); buildCreator(wardrobe); }; bd.appendChild(b); }
+  const hs = $('swHairStyle'); hs.innerHTML = ''; for (const k of HAIRSTYLES[save.look.body]) { const b = document.createElement('button'); b.className = 'txt' + (save.look.hairStyle === k ? ' on' : ''); b.textContent = HAIR_NAMES[k];
+    b.onclick = () => { save.look.hairStyle = k; save.look.hairLong = k === 'long'; applyLook(player, save.look); buildCreator(wardrobe); }; hs.appendChild(b); }
+  if (save.look.body === 'm') { const b = document.createElement('button'); b.className = 'txt' + (save.look.beard ? ' on' : ''); b.textContent = save.look.beard ? 'Beard ✓' : 'Beard'; b.onclick = () => { save.look.beard = !save.look.beard; applyLook(player, save.look); buildCreator(wardrobe); }; hs.appendChild(b); }
+  // realistic people: face (with its skin tone and hair), beard level, sunglasses, classic cut
+  const real = PEOPLE.on; $('realRows').style.display = real ? '' : 'none'; $('classicRows').style.display = real ? 'none' : '';
+  if (real) { const sex = save.look.body === 'm' ? 'm' : 'f', cur = faceFor(save.look), fc = $('swFace'); fc.innerHTML = '';
+    for (const f of FACES[sex]) { const b = document.createElement('button'), sk = PEOPLE_BASES[f].skin.map(v => Math.round(v * 255)); b.className = 'txt' + (cur === f ? ' on' : '');
+      b.innerHTML = `<span style="color:rgb(${sk})">●</span> ${FACE_NAMES[f]}`; b.onclick = () => { save.look.face = f; save.look.skin = '#' + sk.map(v => v.toString(16).padStart(2, '0')).join(''); applyLook(player, save.look); buildCreator(wardrobe); }; fc.appendChild(b); }
+    if (sex === 'm') for (const [lv, n] of [[0, 'No beard'], [35, 'Stubble'], [80, 'Beard']]) { const on = (save.look.beard ? (save.look.beardLevel || 80) : 0) === lv; const b = document.createElement('button'); b.className = 'txt' + (on ? ' on' : ''); b.textContent = n;
+      b.onclick = () => { save.look.beard = lv > 0; save.look.beardLevel = lv || undefined; applyLook(player, save.look); buildCreator(wardrobe); }; fc.appendChild(b); }
+    const gl = $('swGlasses'); gl.innerHTML = ''; for (const [k, n] of GLASSES) { const b = document.createElement('button'); b.className = 'txt' + ((save.look.glasses || '') === k ? ' on' : ''); b.textContent = n; b.onclick = () => { save.look.glasses = k; applyLook(player, save.look); buildCreator(wardrobe); }; gl.appendChild(b); } }
+  const showCut = real && (save.look.style || 'solid') === 'solid'; $('cutRow').style.display = showCut ? '' : 'none';
+  if (showCut) { const cu = $('swCut'); cu.innerHTML = ''; const cuts = save.look.body === 'm' ? [['tank', 'Tank & shorts'], ['polo', 'Polo & shorts']] : [['tank', 'Party top & denim'], ['tee', 'Tee & jeans']];
+    for (const [k, n] of cuts) { const b = document.createElement('button'); b.className = 'txt' + ((save.look.cut || cuts[0][0]) === k ? ' on' : ''); b.textContent = n; b.onclick = () => { save.look.cut = k; applyLook(player, save.look); buildCreator(wardrobe); }; cu.appendChild(b); } }
+  const st = $('swStyle'); st.innerHTML = ''; for (const k of save.owned) { const b = document.createElement('button'); b.className = 'txt' + (save.look.style === k ? ' on' : ''); b.textContent = STYLES[k].n; b.onclick = () => { save.look.style = k; applyLook(player, save.look); buildCreator(wardrobe); }; st.appendChild(b); }
+  $('statusWrap').style.display = wardrobe && save.look.banded ? 'none' : '';
+  const ss = $('swStatus'); ss.innerHTML = ''; for (const [k, s] of Object.entries(STATUS)) { const b = document.createElement('button'); b.className = 'txt' + (save.look.status === k ? ' on' : ''); b.innerHTML = `<span style="color:${s.c}">●</span> ${s.n}`; b.onclick = () => { save.look.status = k; applyLook(player, save.look); buildCreator(wardrobe); }; ss.appendChild(b); }
+}
+function openWardrobe() { buildCreator(true); state.ui = 'creator'; state.wardrobe = true; $('creator').classList.remove('hidden'); }
+$('crDone').onclick = () => { save.look.name = ($('crName').value || 'Guest').slice(0, 16); persist(); updateBand(); $('creator').classList.add('hidden'); state.ui = null;
+  if (!state.wardrobe) { state.started = true; $('hud').classList.remove('hidden'); syncButtons(); renderMini(true); setMusic(); toast('Welcome to the Strip! Walk into TILEO KINGDOM to check in, or grab the convertible.'); } state.wardrobe = false; };
+$('gateYes').onclick = () => { $('gate').classList.add('hidden'); buildCreator(false); state.ui = 'creator'; $('creator').classList.remove('hidden'); state.started = false;
+  for (const a of Object.values(tracks)) a.preload = 'auto'; state.audioUnlocked = true; };
+$('gateNo').onclick = () => { location.href = 'about:blank'; };
+
+// ---------- movement / collisions ----------
+function blocked(x, z, r) { const A = state.area;
+  if (A.ring) { const R = A.ring, dx = x - R.cx, dz = z - R.cz, d = Math.hypot(dx, dz); if (d < R.r0 + r || d > R.r1 - r) return true;
+    if (d > R.w0 - r && d < R.w1 + r) { const a = Math.atan2(dz, dx); if (!R.doors.some(ad => Math.abs(angleWrap(a - ad)) * d < R.half - r)) return true; }
+    for (const c of A.circles || []) if (Math.hypot(x - c[0], z - c[1]) < c[2] + r) return true; }
+  if (A.rects.length && !A.rects.some(q => x >= q[0] && x <= q[1] && z >= q[2] && z <= q[3])) return true;
+  for (const b of A.aabbs) if (x > b[0] - r && x < b[1] + r && z > b[2] - r && z < b[3] + r) return true; return false; }
+function tryMove(o, dx, dz, r) { const p = o.position; if (!blocked(p.x + dx, p.z + dz, r)) { p.x += dx; p.z += dz; return true; } let ok = false; if (!blocked(p.x + dx, p.z, r)) { p.x += dx; ok = true; } else if (!blocked(p.x, p.z + dz, r)) { p.z += dz; ok = true; } return ok; }
+function waterDepth(p) { for (const w of state.area.water) { if (w.rect && inRect(p, w.rect)) return w.depth; if (w.circle && Math.hypot(p.x - w.circle[0], p.z - w.circle[1]) < w.circle[2]) return w.depth; } return 0; }
+let danceAcc = 0;
+function update(dt, t) {
+  const A = state.area; let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + joy.x, iy = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + joy.y;
+  if (!state.started || state.ui) { ix = iy = 0; }
+  ix = Math.max(-1, Math.min(1, ix)); iy = Math.max(-1, Math.min(1, iy));
+  if (state.cine) { needle.updRide(dt, t); }
+  else if (state.limo) { /* the limo drives itself */ }
+  else if (state.driving) {
+    const accel = iy * 22, maxV = 34; state.carSpeed += accel * dt; if (!iy) state.carSpeed *= Math.pow(0.4, dt); state.carSpeed = Math.max(-10, Math.min(maxV, state.carSpeed));
+    state.carHeading -= ix * dt * 1.6 * Math.min(1, Math.abs(state.carSpeed) / 6) * Math.sign(state.carSpeed || 1);
+    const h = state.carHeading, v = state.carSpeed * dt; if (!tryMove(car, Math.sin(h) * v, Math.cos(h) * v, 2.0)) state.carSpeed *= -0.3;
+    car.rotation.y = h; player.position.set(car.position.x - Math.cos(h) * 0.45 + Math.sin(h) * -0.4, 0.25, car.position.z + Math.sin(h) * 0.45 + Math.cos(h) * -0.4); player.rotation.y = h; animate(player, t, 0, 'drive'); state.pmode = 'drive';
+    if (!cam.manual) cam.yaw += (angleWrap(h + PI - cam.yaw)) * Math.min(1, dt * 3);
+  } else {
+    const run = state.sprint || keys.ShiftLeft || keys.ShiftRight || Math.hypot(joy.x, joy.y) > 0.95; const sp = (run ? 11 : 6) * (waterDepth(player.position) > 0.7 ? 0.55 : 1);
+    const fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw), rx = Math.cos(cam.yaw), rz = -Math.sin(cam.yaw);
+    let mx = fx * iy + rx * ix, mz = fz * iy + rz * ix; const m = Math.hypot(mx, mz); state.moving = 0;
+    if (m > 0.05) { mx /= Math.max(1, m); mz /= Math.max(1, m); tryMove(player, mx * sp * dt, mz * sp * dt, 0.4); const target = Math.atan2(mx, mz); player.rotation.y += angleWrap(target - player.rotation.y) * Math.min(1, dt * 12); state.moving = sp * Math.min(1, m); if (state.emote) { state.emote = null; syncButtons(); } }
+    else if (prefs.fp) player.rotation.y += angleWrap(cam.yaw + PI - player.rotation.y) * Math.min(1, dt * 12);
+    const wd = waterDepth(player.position); state.baseY += ((A.id === 'strip' && Math.abs(player.position.x) > 14 && Math.abs(player.position.x) < 22 ? 0.15 : -wd) - state.baseY) * Math.min(1, dt * 8);
+    if (state.air) { state.vy -= 14 * dt; state.jy += state.vy * dt; if (state.jy <= 0) { state.jy = 0; state.vy = 0; state.air = false; } }
+    player.position.y = (A.floorY || 0) + state.baseY + state.jy;
+    const seat = wd >= 0.6 && A.water.find(w => w.seat && w.circle && Math.hypot(player.position.x - w.circle[0], player.position.z - w.circle[1]) < w.circle[2]);
+    const mode = state.air ? 'jump' : (wd >= 0.8 && !seat) ? 'swim' : state.emote ? state.emote : (seat && !state.moving ? 'sit' : '');
+    animate(player, t, state.moving, mode); state.pmode = mode;
+    if (state.emote === 'dance' && A.id === 'club' && inRect(player.position, club.danceRect)) { danceAcc += dt; if (danceAcc > 10) { danceAcc = 0; setCoins(save.coins + 5); toast('Dance streak +5 coins 🔥'); } }
+  }
+  cam.manual = Math.max(0, (cam.manual || 0) - dt);
+  // interact prompt
+  const it = state.started && !state.ui ? nearest() : null; state.near = it; const lbl = it ? (typeof it.label === 'function' ? it.label() : it.label) : '';
+  $('btnAct').classList.toggle('hidden', !it); $('actLbl').textContent = lbl || 'Interact'; $('hint').textContent = it ? (isTouch ? `✋ ${lbl}` : `E · ${lbl}`) : ''; $('hint').classList.toggle('on', !!it);
+  limo.update(dt, t); photo.pose();
+  if (A.id === 'strip' && state.started && !state.limo && !state.cine) { let best = null, bd = 1e9; for (const l of strip.landmarks) { const d = Math.hypot(player.position.x - l.x, player.position.z - l.z); if (d < bd) { bd = d; best = l; } } $('areaName').textContent = `Las Vegas Strip · near ${best.name}${state.driving ? ' · 🚗 ' + Math.round(Math.abs(state.carSpeed) * 2.2) + ' mph' : ''}`; }
+  for (const f of A.anim) f(t, dt, player.position); if (A.showStrip) for (const f of strip.anim) f(t, dt, player.position);
+  miniAcc += dt; if (miniAcc > (Q.key === 'low' ? 0.1 : 0.05)) { miniAcc = 0; renderMini(); }
+  if (state.ui === 'mapFull') renderFullMap();
+}
+function angleWrap(a) { while (a > PI) a -= PI * 2; while (a < -PI) a += PI * 2; return a; }
+const camTarget = new THREE.Vector3(), camPos = new THREE.Vector3();
+const fpDir = new THREE.Vector3();
+function updateCamera(dt) {
+  const A = state.area, p = player.position;
+  if (state.ui === 'photo' && photo.camera(dt)) return;
+  if (state.ui === 'binoc' && needle.binocCamera()) return;
+  if (state.cine && needle.cineCamera(dt)) return;
+  if (state.limo && limo.camera(dt)) return;
+  if (camera.fov !== 62) { camera.fov = 62; camera.updateProjectionMatrix(); }
+  const cr = state.ui === 'creator'; // creator preview: 3/4 portrait of the guest, framed to the right of the panel
+  player.visible = !prefs.fp || cr;
+  if (cr) { player.rotation.y = cam.yaw - 0.35; const d = 3.3, sx = innerWidth > 700 ? -0.75 : 0, rx = Math.cos(cam.yaw) * sx, rz = -Math.sin(cam.yaw) * sx;
+    camTarget.set(p.x + rx, p.y + 1.05, p.z + rz); camPos.set(camTarget.x + Math.sin(cam.yaw) * d, camTarget.y + 0.25, camTarget.z + Math.cos(cam.yaw) * d);
+    camera.position.lerp(camPos, Math.min(1, dt * 10)); camera.lookAt(camTarget); CHAR.camPos.copy(camera.position); return; }
+  if (prefs.fp) { const pitch = cam.pitch - 0.2, fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw), eye = p.y + (state.driving ? 1.12 : 1.62);
+    camera.position.set(p.x + fx * 0.12, eye, p.z + fz * 0.12); fpDir.set(fx * Math.cos(pitch), -Math.sin(pitch), fz * Math.cos(pitch)).add(camera.position); camera.lookAt(fpDir); CHAR.camPos.copy(camera.position); return; } const d = cam.dist; camTarget.set(p.x, p.y + (state.driving ? 1.6 : 1.7) + (cam.lift || 0), p.z);
+  camPos.set(p.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * d, camTarget.y + Math.sin(cam.pitch) * d, p.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * d);
+  if (A.rects.length && !A.bbox) { let dd = d; const inA = () => A.rects.some(r => camPos.x > r[0] + 0.3 && camPos.x < r[1] - 0.3 && camPos.z > r[2] + 0.3 && camPos.z < r[3] - 0.3); // keep the camera on the walkable deck (e.g. not behind the pool elevator wall)
+    for (let k = 0; k < 10 && dd > 1.6 && !inA(); k++) { dd *= 0.82; camPos.x = p.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * dd; camPos.z = p.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * dd; } }
+  if (A.bbox) { camPos.x = Math.min(A.bbox[1] - 0.3, Math.max(A.bbox[0] + 0.3, camPos.x)); camPos.z = Math.min(A.bbox[3] - 0.3, Math.max(A.bbox[2] + 0.3, camPos.z)); }
+  if (A.ring) { const R = A.ring; let dd = d; const rr = () => Math.hypot(camPos.x - R.cx, camPos.z - R.cz); // keep the camera off the elevator core and inside the railing
+    for (let k = 0; k < 12 && dd > 1.2 && (rr() < R.r0 + 0.6 || rr() > R.r1 + 1.2); k++) { dd *= 0.82; camPos.x = p.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * dd; camPos.z = p.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * dd; }
+    if (rr() < R.w1 + 0.2) camPos.y = Math.min(R.ceil, camPos.y); }
+  if (A.ceiling) camPos.y = Math.min(A.ceiling, camPos.y); camPos.y = Math.max((A.floorY || 0) + 0.4, camPos.y);
+  camera.position.lerp(camPos, Math.min(1, dt * 10)); camera.lookAt(camTarget); CHAR.camPos.copy(camera.position);
+}
+let frames = 0, last = performance.now(), t = 0; const photoDof = { on: false, focus: 1 };
+function loop() { const now = performance.now(), dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt; if (window.__preHook) window.__preHook(dt, t); update(dt, t); updateCamera(dt); if (window.__camHook) window.__camHook(camera, dt, t); if (net) net.update(dt, t); syncCharacters(dt); { const pp = state.driving ? car.position : player.position; amb.update(dt, { area: state.area.id, tod: state.tod, pos: pp, traffic: strip.traffic, limo: !!state.limo, driving: state.driving, inCasino: state.area.id === 'lobby' && pp.x > 20 }); } gfx.st.photo = photo.st.on && photo.st.mode === 'selfie' ? (photoDof.on = true, photoDof.focus = Math.max(0.6, photo.st.arm), photoDof) : null; gfx.update(dt, state.driving ? car.position : player.position, t); if (state.area.outdoor) updateWaters(t, camera, gfx.sunDir, gfx.sun.color); gfx.render(); photo.afterRender(); frames++; requestAnimationFrame(loop); }
+
+// ---------- boot ----------
+gfx.applyQuality(); renderQualityUI();
+applyLook(player, save.look); setCoins(save.coins); updateBand(); syncButtons();
+enterArea('strip', 40, -318, -PI / 2 + 0.25); cam.pitch = 0.18; camera.position.set(30, 4, -316);
+loop();
+// loading screen (DJ Tileo): wait for both logo textures, min ~1s so the brand is seen
+function showLoading(p = 0.35, txt = 'Loading the Strip…') { $('loading').classList.remove('hidden'); $('loadBar').style.width = (p * 100) + '%'; $('loadTxt').textContent = txt; }
+{ const t0 = performance.now(); logoMaterial('dj'); logoMaterial('resort'); let n = 0; $('loadBar').style.width = '30%';
+  const step = () => { n++; $('loadBar').style.width = (30 + n * 23) + '%'; };
+  const rig = Promise.race([rigReady.catch(() => {}), new Promise(r => setTimeout(r, 20000))]); // characters (GLB rigs + animation library); never block forever
+  logoReady.dj.then(step); logoReady.resort.then(step); rig.then(() => { step(); $('loadTxt').textContent = 'Guests arriving…'; });
+  Promise.all([logoReady.dj, logoReady.resort, rig]).then(() => { $('loadTxt').textContent = 'Doors open · welcome to TILEO KINGDOM';
+    setTimeout(() => $('loading').classList.add('hidden'), Math.max(250, 1100 - (performance.now() - t0))); }); }
+
+// ---------- teleport (v4) ----------
+const TP_LMK = [['Bellissimo', '⛲', 'Bellissimo Fountains'], ['Luxe Pyramid', '🔺'], ['Emerald City Grand', '💚'], ['Flamingo Pink', '🦩'], ['Kingdom of Rome', '🏛️'], ['Venezia Grand', '🚤'], ['Sky Needle', '🗼']];
+const TPD = [{ id: 'car', icon: '🚗', name: 'My Car' }, { id: 'entrance', icon: '👑', name: 'Tileo Kingdom entrance' }, { id: 'lobby', icon: '🛎️', name: 'Lobby' }, { id: 'casino', icon: '🎰', name: 'Casino' },
+  { id: 'pool', icon: '🏝️', name: 'Pool Deck' }, { id: 'club', icon: '🎧', name: 'Mega Club' }, { id: 'suite', icon: '🛏️', name: 'My Suite' },
+  { id: 'needleTop', icon: '🗼', name: 'Sky Needle Top' }, { id: 'limo', icon: '🚘', name: 'Limo ride' },
+  ...TP_LMK.map(([lm, icon, name]) => ({ id: 'lm:' + lm, icon, name: name || lm, lm }))];
+const tpById = id => TPD.find(d => d.id === id);
+let tpBusy = false, mapPins = [];
+prefs.tpSeat = !!prefs.tpSeat; $('tpSeat').checked = prefs.tpSeat; $('tpSeat').onchange = () => { prefs.tpSeat = $('tpSeat').checked; savePrefs(); };
+function tpArea(d) { return d.id === 'needleTop' ? 'needle' : d.id === 'car' || d.id === 'entrance' || d.id === 'limo' || d.lm ? 'strip' : d.id === 'casino' ? 'lobby' : d.id === 'suite' ? 'room' : d.id; }
+function openTeleport() { if (!state.started) return; toggleWheel(false); const box = $('tpList'); box.innerHTML = '';
+  for (const d of TPD) { const b = document.createElement('button'); b.dataset.tp = d.id; let sub = '';
+    if (d.id === 'suite' && !save.room) { b.classList.add('locked'); sub = 'check in first'; }
+    else if (d.id === 'suite') sub = 'Suite ' + save.room;
+    else if (d.id === 'needleTop') sub = '238 m deck · 360° views'; else if (d.id === 'limo') sub = state.limo ? 'riding now' : 'chauffeured Strip cruise';
+    else if (d.id === 'car') { const p = state.area.id === 'strip' ? (state.driving ? car.position : player.position) : null; sub = state.driving ? 'you are driving' : p ? Math.round(Math.hypot(p.x - car.position.x, p.z - car.position.z)) + ' m away' : 'parked on the Strip'; }
+    if (tpArea(d) === state.area.id && d.id !== 'car' && !d.lm && d.id !== 'entrance') b.classList.add('here');
+    b.innerHTML = `${d.icon}<span>${d.name}</span>${sub ? `<small>${sub}</small>` : ''}`; b.onclick = () => teleport(d.id); box.appendChild(b); }
+  showUI('teleport'); }
+$('mapTp').onclick = () => openTeleport();
+function safeSpot(x, z, r = 0.45) { const ok = (a, b) => !blocked(a, b, r) && waterDepth({ x: a, z: b }) < 0.3;
+  if (ok(x, z)) return { x, z }; for (let rad = 1; rad <= 24; rad += 1) for (let k = 0; k < 16; k++) { const a = k / 16 * PI * 2, qx = x + Math.cos(a) * rad, qz = z + Math.sin(a) * rad; if (ok(qx, qz)) return { x: qx, z: qz }; }
+  return { x, z }; }
+function parkCar() { if (!state.driving) return; state.driving = false; state.carSpeed = 0; toggleLights(false); cam.dist = 7; }
+function teleport(id) { const d = tpById(id); if (!d || !state.started || tpBusy) return;
+  if (id === 'suite' && !save.room) { closeUI(); toast('🛏️ Check in first: visit the front desk in the Tileo Kingdom lobby to get your suite.'); return; }
+  if (id === 'car' && state.driving) { closeUI(); toast("🚗 You're already in the driver seat."); return; }
+  if (id === 'limo' && state.limo) { closeUI(); toast('🚘 You are already riding in the limo.'); return; }
+  closeUI(); toggleWheel(false); tpBusy = true; const f = $('fade'); f.classList.add('tp'); void f.offsetWidth; f.classList.add('on');
+  setTimeout(() => { try { tpArrive(d); } catch (e) { console.error('teleport', e); }
+    setTimeout(() => { f.classList.remove('on'); setTimeout(() => { f.classList.remove('tp'); tpBusy = false; }, 420); }, 420); }, 430); }
+function tpArrive(d) { const to = tpArea(d), keepCar = state.driving && to === 'strip' && d.id !== 'car';
+  if (!keepCar) parkCar(); state.emote = null; state.air = false;
+  let x = 0, z = 0, yaw = 0, side = 1, carSeat = false;
+  if (d.lm || d.id === 'entrance') { const l = d.lm ? lmk(d.lm) : { x: strip.tileo.doorX, z: strip.tileo.doorZ }; side = l.x < 0 ? -1 : 1;
+    if (d.id === 'entrance') { x = strip.tileo.doorX - 8 * side; z = strip.tileo.doorZ; } else { x = side * 18; z = l.z; } yaw = side < 0 ? PI / 2 : -PI / 2; }
+  else if (d.id === 'car') { const h = car.rotation.y; x = car.position.x - Math.cos(h) * 2.0; z = car.position.z + Math.sin(h) * 2.0; yaw = h + PI; carSeat = prefs.tpSeat; }
+  else if (d.id === 'lobby') ({ x, z, yaw } = lobby.spawnDoor);
+  else if (d.id === 'casino') { x = 27; z = 4; yaw = -PI / 2; }
+  else if (d.id === 'needleTop') ({ x, z, yaw } = needleA.spawn);
+  else if (d.id === 'limo') { x = 17.5; z = -330; yaw = -PI / 2; }
+  else if (d.id === 'suite') { const dr = rooms.doors.find(q => q.num === save.room); if (dr) state.lastDoor = { side: dr.side, z: dr.z }; x = 0; z = 7.5; yaw = 0; }
+  else ({ x, z, yaw } = areas[to].spawnElev);
+  enterArea(to, x, z, yaw);
+  if (to === 'pool' || to === 'club') areas[to].elevDoor && (areas[to].elevDoor.force = 1.5);
+  if (keepCar) { const q = safeSpot(side * 7, z, 2.2); car.position.set(q.x, 0, q.z); state.carHeading = car.rotation.y = side < 0 ? PI : 0; state.carSpeed = 0; cam.yaw = state.carHeading + PI; }
+  else { let q = safeSpot(player.position.x, player.position.z); if (d.id === 'car' && Math.hypot(q.x - x, q.z - z) > 1) { const h = car.rotation.y, o = safeSpot(car.position.x + Math.cos(h) * 2.0, car.position.z - Math.sin(h) * 2.0); if (Math.hypot(o.x - car.position.x, o.z - car.position.z) < Math.hypot(q.x - car.position.x, q.z - car.position.z)) q = o; }
+    player.position.set(q.x, areas[to].floorY || 0, q.z); }
+  if (carSeat) { enterCar(); cam.yaw = car.rotation.y + PI; }
+  if (d.id === 'limo') { limo.start(prefs.limoColor || 'white'); updateCamera(1); syncButtons(); renderMini(true); return; }
+  updateCamera(1); // snap the camera while the screen is covered
+  syncButtons(); renderMini(true); if (!carSeat) toast(`🌀 Teleported to ${d.name}${keepCar ? ' (with your convertible)' : ''}`); }
+function tpPins(A, P, g) { const pins = [];
+  if (A.id === 'strip') { for (const d of TPD) { if (d.lm) { const l = lmk(d.lm); if (l) pins.push({ id: d.id, uv: P(l.x, l.z) }); } }
+    const tk = lmk('TILEO KINGDOM'); if (tk) pins.push({ id: 'entrance', uv: P(tk.x, tk.z) }); { const uv = P(NEEDLE_X, NEEDLE_Z); pins.push({ id: 'needleTop', uv: [uv[0], uv[1] - 22] }); } pins.push({ id: 'limo', uv: P(17, -330) }); pins.push({ id: 'car', uv: P(car.position.x, car.position.z) }); return pins; }
+  const here = { needle: [['needleTop', needleA.spawn]], lobby: [['lobby', lobby.spawnDoor], ['casino', { x: 27, z: 4 }]], pool: [['pool', pool.spawnElev]], club: [['club', club.spawnElev]], room: [['suite', { x: 0, z: 7.5 }]] }[A.id] || [];
+  g.font = 'bold 14px sans-serif'; g.textAlign = 'center';
+  for (const [id, sp] of here) { const uv = P(sp.x, sp.z); pins.push({ id, uv }); g.fillStyle = '#ffcf4a'; g.strokeStyle = '#000'; g.lineWidth = 3; g.strokeText('🌀 ' + tpById(id).name, uv[0], uv[1] - 14); g.fillText('🌀 ' + tpById(id).name, uv[0], uv[1] - 14); g.lineWidth = 1; }
+  return pins; }
+mapCv.addEventListener('click', e => { const r = mapCv.getBoundingClientRect(), x = (e.clientX - r.left) * mapCv.width / r.width, y = (e.clientY - r.top) * mapCv.height / r.height;
+  let best = null, bd = 30; for (const pn of mapPins) { const dd = Math.hypot(pn.uv[0] - x, pn.uv[1] - y); if (dd < bd) { bd = dd; best = pn; } } if (best) teleport(best.id); });
+// ---------- v5: limo hail ----------
+function openHail(fromPhone) { if (!state.started) return; if (state.limo) { closeUI(); return toast('🚘 You are already riding.'); } toggleWheel(false);
+  $('hailWhite').classList.toggle('on', (prefs.limoColor || 'white') === 'white'); $('hailBlack').classList.toggle('on', prefs.limoColor === 'black');
+  $('hailNote').textContent = fromPhone && !(state.area.id === 'strip' && Math.hypot(player.position.x - 17, player.position.z + 330) < 30) ? 'Your chauffeur picks you up at the TILEO KINGDOM entrance.' : 'Waiting at the TILEO KINGDOM curb.'; showUI('limoHail'); }
+function hailLimo(color) { prefs.limoColor = color; savePrefs(); closeUI(); if (state.cine) return;
+  const go = () => { limo.start(color); updateCamera(1); syncButtons(); renderMini(true); };
+  if (state.area.id === 'strip' && Math.hypot(player.position.x - 17, player.position.z + 330) < 30) transition(go); else transition(() => { parkCar(); enterArea('strip', 17.5, -330, -PI / 2); go(); }); }
+// test/debug hook (used by the local smoke test)
+window.__game = { amb, areas, state, player, car, cam, save, enterArea, setNight, setTod, setQuality, gfx, Q, scene, camera, checkIn, openSlots, openElevator, enterCar, exitCar, showLoading, showKeycard, frames: () => frames, renderer, applyLook, CHAR, rigStatus, prefs, setEmote, jump, toggleSprint, toggleCam, toggleMini, toggleWheel, toggleLights, horn, openMap, openPhone, openCredits, syncButtons, teleport, openTeleport, TPD, mapPins: () => mapPins, tpBusy: () => tpBusy, blocked, waterDepth, limo, needle, photo, needleA, openHail, hailLimo, updateCamera: d => updateCamera(d), step: (n = 1, dt = 0.05) => { for (let k = 0; k < n; k++) { t += dt; update(dt, t); updateCamera(dt); } },
+  start: () => { $('gate').classList.add('hidden'); $('creator').classList.add('hidden'); state.ui = null; state.started = true; $('hud').classList.remove('hidden'); syncButtons(); renderMini(true); setMusic(); } };
+
+// ---------- v6.2: online players, chat, parties and TILEO accounts (website build: config.js sets TILEO_RELAY_URL) ----------
+function applyProfile(p) { // a guest saved to the player's TILEO account
+  if (typeof p.coins === 'number' && isFinite(p.coins)) save.coins = Math.max(0, Math.round(p.coins));
+  if (Array.isArray(p.owned)) save.owned = [...new Set(['solid', ...p.owned.filter(k => typeof k === 'string' && Object.prototype.hasOwnProperty.call(STYLES, k))])];
+  save.room = typeof p.room === 'number' || typeof p.room === 'string' ? p.room : null; save.bonusDay = typeof p.bonusDay === 'string' ? p.bonusDay : '';
+  if (p.look && typeof p.look === 'object') { save.look = Object.assign({}, save.look, p.look); if (!HAIRSTYLES[save.look.body === 'm' ? 'm' : 'f'].includes(save.look.hairStyle)) save.look.hairStyle = HAIRSTYLES[save.look.body === 'm' ? 'm' : 'f'][0]; }
+  localStorage.setItem(SAVE_KEY, JSON.stringify(save)); applyLook(player, save.look); setCoins(save.coins); updateBand();
+  if (state.ui === 'creator') buildCreator(!!state.wardrobe);
+}
+function goToSpot(area, x, z, done) { // "Go to" a friend from the Online sheet
+  if (!state.started || tpBusy || state.cine || !areas[area]) return; closeUI(); toggleWheel(false);
+  transition(() => { parkCar(); enterArea(area, x, z); const q = safeSpot(x, z); player.position.set(q.x, areas[area].floorY || 0, q.z); updateCamera(1); syncButtons(); renderMini(true); if (done) done(); });
+}
+net = initNet({ $, state, player, car, scene, camera, save, toast, showUI, closeUI, persist, applyProfile, goTo: goToSpot, isTouch, chime: () => amb.chime('spin') });
+window.__game.net = net;
