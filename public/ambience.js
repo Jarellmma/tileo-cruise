@@ -47,20 +47,21 @@ export function createAmbience() {
   // c: { area, outdoor, tod, pos: {x,z}, traffic: [{x,z}], limo, driving, inCasino, crowdK }
   function update(dt, c) {
     if (!ac) return; t += dt; const A = c.area;
-    const strip = A === 'strip', pool = A === 'pool', needle = A === 'needle', club = A === 'club', lobby = A === 'lobby', rooms = A === 'rooms' || A === 'room';
+    const strip = A === 'strip', pool = A === 'pool', needle = A === 'needle', club = A === 'club', lobby = A === 'lobby', rooms = A === 'rooms' || A === 'room'; const airport = A === 'airport';
     // traffic proximity
     let near = 0; if ((strip || needle) && c.traffic && !needle) for (const k of c.traffic) { const d2 = (k.x - c.pos.x) ** 2 + (k.z - c.pos.z) ** 2; near += 1 / (1 + d2 / 60); }
     const night = c.tod === 'night';
-    set(L.city.gain, strip ? 0.22 : pool ? 0.07 : needle ? 0.05 : rooms ? 0.015 : 0);
+    set(L.city.gain, strip ? 0.22 : pool ? 0.07 : needle ? 0.05 : airport ? 0.04 : rooms ? 0.015 : 0);
     set(L.near.gain, strip ? Math.min(0.5, near * 0.35) : 0, 0.15);
     set(L.cityLP.frequency, c.limo || c.driving ? 900 : rooms ? 500 : 20000, 0.3);
     set(L.wind.gain, needle ? 0.16 : pool ? 0.05 : strip ? 0.02 : 0); L.windF.frequency.setTargetAtTime(400 + 250 * Math.sin(t * 0.21) + 120 * Math.sin(t * 0.53), ac.currentTime, 0.8);
     set(L.water.gain, pool ? 0.06 + 0.03 * Math.sin(t * 0.9) : 0, 0.3);
-    const crowd = club ? 0.14 : lobby ? (c.inCasino ? 0.12 : 0.09) : pool ? 0.07 : strip ? (night ? 0.035 : 0.025) : 0;
+    const crowd = club ? 0.14 : lobby ? (c.inCasino ? 0.12 : 0.09) : airport ? 0.1 : pool ? 0.07 : strip ? (night ? 0.035 : 0.025) : 0;
     set(L.crowd.gain, crowd * (c.crowdK ?? 1), 0.6);
     if (crowd > 0 && t > nextBabble) { nextBabble = t + rnd(0.09, 0.22); for (const v of L.voices) set(v.gain, Math.random() < 0.35 ? 0 : rnd(0.3, 1), 0.05); }
     if (strip && t > nextHorn) { nextHorn = t + rnd(7, 22); horn(rnd(0.012, 0.035) * (c.limo ? 0.5 : 1)); }
     if (lobby && t > nextChime) { const k = c.inCasino ? 1 : 0.35; nextChime = t + rnd(0.8, 2.6) / k; if (Math.random() < 0.06) bells(0.05 * k, 9, 1046, 0.07); else bells(rnd(0.012, 0.03) * k, Math.floor(rnd(2, 5)), Math.random() < 0.5 ? 880 : 1175, rnd(0.06, 0.12)); }
+    if (airport && t > nextChime) { nextChime = t + rnd(22, 40); bells(0.035, 2, 659, 0.32); } // terminal PA chime
     if (pool && t > nextSplash) { nextSplash = t + rnd(2.5, 7); splash(rnd(0.03, 0.08)); }
   }
   return {

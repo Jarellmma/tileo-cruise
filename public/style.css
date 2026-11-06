@@ -312,3 +312,17 @@ body.inLimo #nowPlay{bottom:auto;top:calc(64px + env(safe-area-inset-top))}
 .musicCard .volRow{margin-top:10px}
 .mList button{background:#2a1d0c;color:#f3e6c4;border:1px solid #c9932e55}.mList button.on{background:#d8b45a;color:#1a1206}
 .mRow button:not(.gold){background:#2a1d0c;color:#f3e6c4;border:1px solid #c9932e66}
+/* v8: arrival checklist (airport) + Booze Library / suite bar cart cards */
+#arrival{position:absolute;right:10px;top:calc(60px + env(safe-area-inset-top));width:232px;background:#0b0805e0;border:1px solid #c9932e99;border-radius:14px;padding:8px 10px 9px;font-size:12.5px;pointer-events:auto;box-shadow:0 2px 14px #000a}
+#arrival>b{color:#ffd77a;display:block;margin-bottom:4px;letter-spacing:.4px}
+#arrival ul{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-direction:column;gap:3px}
+#arrival li{line-height:1.3}#arrival li.done{opacity:.55;text-decoration:line-through}
+#arrival li i{font-style:normal;font-size:10.5px;color:#c9b48a;opacity:.85}
+#arrival button{font-size:11.5px;padding:4px 9px;border-radius:9px;background:#2a1d0c;color:#ffd77a;border:1px solid #c9932e88}
+@media (max-width:900px){#arrival{top:calc(104px + env(safe-area-inset-top));width:204px;font-size:11.5px}}
+body.inLimo #arrival{display:none}
+.arrCard{text-align:left}.arrCard h2{text-align:center}.arrList{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.arrRow{display:flex;align-items:center;gap:8px;background:#ffffff0a;border:1px solid #c9932e33;border-radius:12px;padding:7px 8px}
+.arrRow .tIc{font-size:22px;width:28px;text-align:center}.arrRow .tTx{flex:1;display:flex;flex-direction:column;min-width:0}.arrRow .tTx small{opacity:.75;font-size:11.5px;line-height:1.3}
+.arrRow button{padding:6px 10px;font-size:12.5px;white-space:nowrap}
+.arrCard .tBtns{display:flex;justify-content:center;gap:8px}

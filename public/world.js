@@ -1,12 +1,13 @@
 // The Strip: road, sidewalks, parody lookalike landmarks (procedural PBR architecture), Tileo Kingdom tower
 import * as THREE from 'three';
 import { Water } from 'three/addons/objects/Water.js';
-import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, chromeM, canvas, tex, logoMaterial, logoReady, LOGOS , pbr } from './core.js?v=1793988736';
-import { makeLion, makeCharacter, randomLook, animate } from './characters.js?v=1793988736';
-import { STY, facade, roofMat, rect, circle, arcBand, stadium, inset, Batch, streetTex, palms as palmKit, carKitGeo } from './city.js?v=1793988736';
-import { carParts, carMats } from './cars.js?v=1793988736';
-import { buildGrounds } from './landscape.js?v=1793988736';
-import { Q } from './quality.js?v=1793988736';
+import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, chromeM, canvas, tex, logoMaterial, logoReady, LOGOS , pbr } from './core.js?v=1794000555';
+import { makeLion, makeCharacter, randomLook, animate } from './characters.js?v=1794000555';
+import { STY, facade, roofMat, rect, circle, arcBand, stadium, inset, Batch, streetTex, palms as palmKit, carKitGeo } from './city.js?v=1794000555';
+import { carParts, carMats } from './cars.js?v=1794000555';
+import { buildGrounds } from './landscape.js?v=1794000555';
+import { buildLandmarks8 } from './strip8.js?v=1794000555';
+import { Q } from './quality.js?v=1794000555';
 
 export function facadeMat(color, w, h, d, lit = 0xffd98f, nightI = 1) {
   const mk = (rx) => { const m = new THREE.MeshStandardMaterial({ color, map: rep(T.facade, rx / 6, h / 5), emissive: lit, emissiveMap: rep(T.facadeE, rx / 6, h / 5), emissiveIntensity: nightI, roughness: 0.55, metalness: 0.2 });
@@ -153,7 +154,7 @@ export function buildStrip(A) {
   { const pole = new THREE.CylinderGeometry(0.13, 0.22, 11, 8); pole.translate(0, 5.5, 0);
     const arm = new THREE.BoxGeometry(3.2, 0.14, 0.14); arm.translate(-1.6, 10.8, 0); const hd = new THREE.BoxGeometry(1.1, 0.24, 0.5); hd.translate(-3.1, 10.7, 0);
     const lampG = mergeG([pole, arm, hd]); const bulbG = new THREE.BoxGeometry(0.9, 0.05, 0.38); bulbG.translate(-3.1, 10.56, 0);
-    const pts = []; for (let z = -630; z <= 630; z += 36) { if (CROSS.some(c => Math.abs(z - c) < 12)) continue; pts.push([14.9, z, 0], [-14.9, z + 18, PI], [0.4, z + 9, PI], [-0.4, z + 9, 0]); }
+    const pts = []; for (let z = -630; z <= 630; z += 36) { if (CROSS.some(c => Math.abs(z - c) < 12)) continue; pts.push([14.9, z, 0], [-14.9, z + 18, PI]); if (Math.abs(z + 9 - 606) > 6) pts.push([0.4, z + 9, PI], [-0.4, z + 9, 0]); } // v8: no median lamp in front of the Welcome sign
     const n = pts.length, lamp = new THREE.InstancedMesh(lampG, M(0x2a2c30, { roughness: 0.45, metalness: 0.7 }), n), bulb = new THREE.InstancedMesh(bulbG, neon(0xfff0d0, {}, 0.6, 2.3), n);
     const pool = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-PI / 2), new THREE.MeshBasicMaterial({ map: S.pool, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffe2b0 }), n);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), s1 = new THREE.Vector3(1, 1, 1), s2 = new THREE.Vector3(13, 1, 13);
@@ -331,12 +332,15 @@ export function buildStrip(A) {
     b.flush(g); solid(x - 22, x + 22, z - 22, z + 22);
     sign('SKY NEEDLE', '#ff66cc', 25, z + 28); landmark('Sky Needle', x, z); }
 
+  // ===================== v8: Aurum & Bravo, Power Chord, Sin City International + airfield, Welcome to Sin City (strip8.js) =====================
+  Object.assign(A, buildLandmarks8({ g, A, solid, sign, facadeSign, landmark, T0, fins, band, cap, roofKit, gold, stone, gray, aviation, makeWater, palms: plazaPalms }));
+
   // ===================== TILEO KINGDOM (vacant North Strip lot, east) =====================
   buildTileo(A, solid, sign, pb);
 
   // ===================== filler buildings + vacant lots / construction =====================
-  const fillers = [[-1, -640, -540], [-1, -520, -482], [-1, -458, -380], [-1, -360, -212], [-1, -188, -20], [-1, 120, 150], [-1, 325, 400], [-1, 540, 640],
-    [1, -530, -482], [1, -458, -414], [1, -260, -212], [1, -188, -140], [1, 10, 70], [1, 170, 295], [1, 325, 335], [1, 440, 640]];
+  const fillers = [[-1, -640, -540], [-1, -520, -482], [-1, -458, -380], [-1, -360, -212], [-1, -188, -152], [-1, -48, -20], [-1, 120, 150], [-1, 325, 400], [-1, 540, 640],
+    [1, -530, -482], [1, -458, -414], [1, 10, 70], [1, 170, 295], [1, 325, 335], [1, 440, 522]]; // v8: Aurum/Bravo, Power Chord and the airport took over lots
   const styles = ['glassBlue', 'darkGlass', 'cream', 'concrete', 'sand', 'goldGlass', 'white', 'beige', 'glassBlue', 'darkGlass'];
   const neonPal = [0xff4fa8, 0x4dd8ff, 0xffcf4a, 0xb46cff, 0x4dff9a, 0xff7a3a];
   const fb = new Batch(); let signs = 0;
@@ -381,7 +385,7 @@ export function buildStrip(A) {
           signMesh(g, t1, sc, cx - sd * (w / 2 + 0.2), podH - 4, cz, Math.min(16, d - 8), Math.min(16, d - 8) / 4, sd < 0 ? PI / 2 : -PI / 2, t2); } }
       z += d + 2 + R() * 6; } }
   // far skyline (no collision): distant resorts both sides
-  for (let k = 0; k < 34; k++) { const sd = k % 2 ? 1 : -1, z = -640 + k * 40 + R() * 10, w = 26 + R() * 26, h = 30 + R() * 110, x = sd * (215 + R() * 70);
+  for (let k = 0; k < 34; k++) { const sd = k % 2 ? 1 : -1, z = -640 + k * 40 + R() * 10, w = 26 + R() * 26, h = 30 + R() * 110, x = sd * (215 + R() * 70); if (sd > 0 && z > 470) continue; // v8: the airfield
     const pts = R() < 0.5 ? rect(x, z, w, w * (0.6 + R() * 0.5), R() * 0.6 - 0.3, 3) : stadium(x, z, w, w * 0.5, R() * PI); T0(fb, styles[k % styles.length], pts, 0, h);
     if (R() < 0.5) band(fb, neon(neonPal[k % neonPal.length], {}, 0.4, 1.8), pts, h - 1.2, 0.8, 1.01); }
   fb.flush(g); pb.flush(g);

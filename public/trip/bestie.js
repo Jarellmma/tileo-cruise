@@ -1,6 +1,6 @@
 // Epic or Fail: Vegas Trip, Stage 2: your bestie. A 3D companion who follows you everywhere (car, limo, pools, club),
 // with their own Energy / Hunger / Buzz / Mood, a floating name tag + speech bubble, loved activities, and a 2 AM habit of wandering off.
-import { BESTIES, WANDER, WANDER_TEXT, OUTFITS } from './data.js?v=1793988736';
+import { BESTIES, WANDER, WANDER_TEXT, OUTFITS } from './data.js?v=1794000555';
 
 const clamp = v => Math.max(0, Math.min(100, v));
 export const moodFace = m => m >= 80 ? '🤩' : m >= 60 ? '😀' : m >= 40 ? '😐' : m >= 20 ? '😕' : '😤';

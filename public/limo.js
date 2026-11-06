@@ -2,11 +2,11 @@
 // The route runs south on the east lanes, U-turns, north on the west lanes, U-turns, and repeats.
 // Local frame: +z forward, -x is the curb side, the floor is at y 0.36.
 import * as THREE from 'three';
-import { M, neon, glow, goldM, chromeM, onNight, logoPlane, canvas, tex, PI } from './core.js?v=1793988736';
-import { Batch, streetTex } from './city.js?v=1793988736';
-import { makeCharacter, animate } from './characters.js?v=1793988736';
-import { wheelParts } from './cars.js?v=1793988736';
-import { STATIONS, station } from './music.js?v=1793988736';
+import { M, neon, glow, goldM, chromeM, onNight, logoPlane, canvas, tex, PI } from './core.js?v=1794000555';
+import { Batch, streetTex } from './city.js?v=1794000555';
+import { makeCharacter, animate } from './characters.js?v=1794000555';
+import { wheelParts } from './cars.js?v=1794000555';
+import { STATIONS, station } from './music.js?v=1794000555';
 
 const XL = 12.4, ZE = 615, RA = 12.4, ARC = PI * RA, LEN = 4 * ZE + 2 * ARC; // loop length is about 2538 m
 const SEG = [2 * ZE, 2 * ZE + ARC, 4 * ZE + ARC, LEN];
@@ -100,12 +100,13 @@ export function buildLimo(strip, C) {
   const stopsList = () => [{ name: 'TILEO KINGDOM', icon: '👑', x: 1, z: -330 }, ...strip.landmarks.filter(l => l.name !== 'TILEO KINGDOM').map(l => ({ name: l.name, icon: '📍', x: l.x, z: l.z }))];
   function setColor(c) { paint.color.set(c === 'black' ? 0x0c0c0e : 0xf4f2ee); paint.roughness = c === 'black' ? 0.18 : 0.22; }
   function place(s) { const r = routeAt(s); grp.position.set(r.x, 0.02, r.z); grp.rotation.y = r.h; grp.updateMatrixWorld(true); return r; }
-  function start(color = 'white') {
+  function start(color = 'white', o = {}) { // v8: o.s = where on the loop to start (the airport curb), o.stop = drive straight to a stop, o.msg = welcome line
     if (st.driving) C.parkCar(); C.closeUI(); setColor(color); leaving.on = false;
-    L = st.limo = { s: PICKUP_S, v: 0, phase: 'board', t: 0, view: 'cabin', stand: false, open: true, windows: false, radio: 'party', stop: null, look: { yaw: 0, pitch: 0 }, passing: '', color, odo: 0 };
+    L = st.limo = { s: o.s ?? PICKUP_S, v: 0, phase: 'board', t: 0, view: 'cabin', stand: false, open: true, windows: false, radio: 'party', stop: null, look: { yaw: 0, pitch: 0 }, passing: '', color, odo: 0 };
+    if (o.stop) { const p = stopsList().find(q => q.name === o.stop); if (p) { const cur = ((L.s % LEN) + LEN) % LEN; L.stop = { s: L.s + (((routeS(p.x, p.z) - cur) % LEN) + LEN) % LEN, name: o.stop }; } }
     place(L.s); grp.visible = true; roofGlass.position.z = -2.6; roofGlass.position.y = 1.775; winG.visible = true;
     st.emote = null; st.air = false; st.jy = 0; C.toggleWheel(false); document.body.classList.add('inLimo'); C.$('limoBar').classList.remove('hidden'); ui(); C.setMusic();
-    C.toast('🚘 Your chauffeur welcomes you aboard. Sit back and cruise the Strip.'); }
+    C.toast(o.msg || '🚘 Your chauffeur welcomes you aboard. Sit back and cruise the Strip.'); }
   function stopAt(name) { const p = stopsList().find(q => q.name === name); if (!p || !L) return; const sl = routeS(p.x, p.z), cur = ((L.s % LEN) + LEN) % LEN; let ds = ((sl - cur) % LEN + LEN) % LEN; if (ds < 25 + L.v * L.v / 4) ds += LEN;
     L.stop = { s: L.s + ds, name }; L.phase = 'ride'; C.$('limoStops').classList.add('hidden'); C.$('limoArrive').classList.add('hidden'); C.toast(`📍 Next stop: ${name}`); ui(); }
   function end() { if (!L) return; if (L.phase === 'arrived' || L.v < 0.5) return getOut(); L.phase = 'ending'; L.stop = { s: L.s + L.v * L.v / (2 * 2.6) + 3, name: 'curbside' }; C.toast('🚪 Your chauffeur is pulling over…'); ui(); }
@@ -152,7 +153,7 @@ export function buildLimo(strip, C) {
     roofGlass.position.z += ((L.open ? -2.6 : -0.8) - roofGlass.position.z) * Math.min(1, dt * 3); roofGlass.position.y = roofGlass.position.z < -1.0 ? 1.775 : 1.71;
     const hue = (t * 0.04) % 1; led.color.setHSL(hue, 0.85, night ? 0.6 : 0.42); amb.material.color.setHSL(hue, 0.9, 0.5);
   }
-  function arrive() { if (L.phase === 'ending') { L.stop = null; return getOut(); } L.phase = 'arrived'; L.v = 0; C.$('limoArrTxt').textContent = `📍 ${L.stop.name}`; C.$('limoArrive').classList.remove('hidden'); C.toast(`📍 Arrived: ${L.stop.name}`); }
+  function arrive() { if (L.phase === 'ending') { L.stop = null; return getOut(); } L.phase = 'arrived'; L.v = 0; C.$('limoArrTxt').textContent = `📍 ${L.stop.name}`; C.$('limoArrive').classList.remove('hidden'); C.toast(`📍 Arrived: ${L.stop.name}`); if (C.onArrive) C.onArrive(L.stop.name); }
   function cruise() { if (!L) return; L.stop = null; L.phase = 'ride'; C.$('limoArrive').classList.add('hidden'); ui(); }
   // ---- camera ----
   const cp = new THREE.Vector3(), ctg = new THREE.Vector3(), sm = new THREE.Vector3(), smT = new THREE.Vector3(); let smInit = false;

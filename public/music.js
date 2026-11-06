@@ -25,6 +25,7 @@ export const LISTS = {
   club: ['liveitup', 'gogo', 'jackpot', 'paradise', 'runitback', 'dice', 'single'],
   suite: ['panoramic', 'lastnite', 'moment', 'vegas', 'single', 'wide'],
   needle: ['panoramic', 'lastnite', 'vegas', 'moment'],
+  airport: ['vegas', 'moment', 'panoramic', 'single', 'wide'],
 };
 // radio stations: convertible, limo and the suite speaker
 export const STATIONS = [

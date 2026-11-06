@@ -2,8 +2,8 @@
 // extruded footprints with real UVs, a merge batcher (few draw calls), and instanced street props.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { canvas, tex, rng, onNight, neon, M, PI , pbrTex, texClone } from './core.js?v=1793988736';
-import { Q } from './quality.js?v=1793988736';
+import { canvas, tex, rng, onNight, neon, M, PI , pbrTex, texClone } from './core.js?v=1794000555';
+import { Q } from './quality.js?v=1794000555';
 
 // ---------------------------------------------------------------- facade styles
 // tw/th: meters covered by one texture tile. cols/rows: window bays and floors per tile.

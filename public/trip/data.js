@@ -19,7 +19,7 @@ export const BACKSTORIES = {
   influencer: { n: 'Clout-Chasing Influencer', icon: '🤳', cash: 65, perk: 'Do It For The Plot', perkD: '2× cash and Fun from Photo Gigs, +15 Style and Charm on every outfit.',
     story: 'You promised your followers a luxury high-roller weekend vlog, then got pickpocketed at baggage claim and lost your ring-light suitcase.' },
   party: { n: 'Unstoppable Party Animal', icon: '🦁', cash: 50, perk: 'Iron Liver & Second Wind', perkD: 'Your Buzz sweet spot stretches to 78% and nighttime Energy drains 35% slower.',
-    story: "You woke up at the resort curb in yesterday's wrinkled plane clothes with $50 stuffed in a neon fanny pack and a prepaid suite voucher." },
+    story: "You woke up riding baggage carousel 11 in yesterday's wrinkled plane clothes, with $50 stuffed in a neon fanny pack and a prepaid suite voucher." },
 };
 
 // Besties: looks use the realistic faces from the people library; loves drive their Mood
@@ -65,6 +65,13 @@ export const ITEMS = {
   steak: { n: 'Prime Tomahawk Steak Dinner', icon: '🥩', price: 45, d: '1.5 h · maxes Hunger, massive Vibe + Fun', fx: { hunger: 100, energy: 10 }, fun: 150, vibe: 25, hours: 1.5, splurge: true },
   mwater: { n: 'Minibar Water (it\'s Vegas)', icon: '💧', price: 9, d: 'Same water, worse price', fx: { hyd: 35, buzz: -15 }, cure: 'water', as: 'water' },
   mshot: { n: 'Minibar Mini-Bottles', icon: '🍾', price: 22, d: 'Buzz + Fun, suite prices', fx: { buzz: 18, hyd: -8 }, fun: 25, vibe: 4, booze: true, splurge: true, as: 'cocktail' },
+};
+// v8: the Booze Library stash (bought at the airport, poured from the suite bar cart for free)
+export const STASH_FX = {
+  bubbly: { fx: { buzz: 16, hyd: -6 }, fun: 45, vibe: 6, booze: true, msg: '🍾 Pop! Bubbly in the suite with the Strip glittering below.' },
+  tequila: { fx: { buzz: 20, hyd: -8 }, fun: 35, vibe: 5, booze: true, msg: '🥃 Salt, shot, lime. A suite shot of silver tequila.' },
+  seltzer: { fx: { buzz: 10, hyd: -2 }, fun: 20, vibe: 3, booze: true, msg: '🍺 Crack! An ice-cold hard seltzer from the bar cart.' },
+  water: { fx: { hyd: 35, buzz: -15 }, cure: true, msg: '💧 Cold water from the bar cart.' },
 };
 export const VENUES = {
   lionbar: { n: 'Lion Lounge Bar', icon: '🦁', items: ['water', 'cocktail', 'burger'], gig: true },

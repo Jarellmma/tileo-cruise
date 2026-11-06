@@ -1,21 +1,23 @@
 // TILEO KINGDOM: Strip Life, playable prototype (Three.js, no build step)
 import * as THREE from 'three';
-import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793988736';
-import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793988736';
-import { createGfx, LOOK } from './gfx.js?v=1793988736';
-import { createAmbience } from './ambience.js?v=1793988736';
-import { createMusic, SONGS, LISTS, STATIONS, station } from './music.js?v=1793988736';
-import { initCasino } from './casino.js?v=1793988736';
-import { initNet } from './net.js?v=1793988736';
-import { initCompanion } from './companion.js?v=1793988736';
-import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793988736';
-import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793988736';
-import { PEOPLE_BASES } from './people_data.js?v=1793988736';
-import { buildStrip, updateWaters } from './world.js?v=1793988736';
-import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793988736';
-import { buildLimo } from './limo.js?v=1793988736';
-import { initPhoto } from './photo.js?v=1793988736';
-import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793988736';
+import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1794000555';
+import { Q, initQuality, setMode, TIERS } from './quality.js?v=1794000555';
+import { createGfx, LOOK } from './gfx.js?v=1794000555';
+import { createAmbience } from './ambience.js?v=1794000555';
+import { createMusic, SONGS, LISTS, STATIONS, station } from './music.js?v=1794000555';
+import { initCasino } from './casino.js?v=1794000555';
+import { initNet } from './net.js?v=1794000555';
+import { initCompanion } from './companion.js?v=1794000555';
+import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1794000555';
+import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1794000555';
+import { PEOPLE_BASES } from './people_data.js?v=1794000555';
+import { buildStrip, updateWaters } from './world.js?v=1794000555';
+import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1794000555';
+import { buildLimo } from './limo.js?v=1794000555';
+import { initPhoto } from './photo.js?v=1794000555';
+import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1794000555';
+import { buildAirport, AIRPORT_DOOR } from './airport.js?v=1794000555';
+import { createArrival } from './arrival.js?v=1794000555';
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window; if (isTouch) document.body.classList.add('touch');
@@ -76,6 +78,14 @@ const needleA = defArea('needle', { label: 'Sky Needle · Observation Deck · 23
   fog: { day: [700, 3600], sunset: [600, 3200], night: [520, 3000] } });
 const needle = buildNeedle(strip, needleA, C5);
 const limo = buildLimo(strip, C5);
+// v8: Sin City International baggage claim (Free Play and the Vegas Trip start here) + the arrival checklist (arrival.js)
+const airport = defArea('airport', { label: 'Sin City International · Baggage Claim', envI: 0.8, hemi: 1.15, exp: 1.04, bloom: { day: [0.35, 0.4, 0.95], sunset: [0.35, 0.4, 0.95], night: [0.4, 0.4, 0.9] },
+  rects: [[-33.5, 33.5, -31.6, 25.6], [-3.4, 3.4, 25, 27.3], [-42, 42, 26.6, 33.5]], ceiling: 9.4, music: 'airport', vol: 0.32 });
+let arrival = null;
+buildAirport(airport, { limoShell: limo.makeShell('white'), timeNow: () => (arrival ? arrival.time() : { h: 10, m: 0 }), grabBag: () => arrival.grabBag(), shop: () => arrival.shop(), services: () => arrival.services(), slots: () => openSlots(),
+  limoLabel: () => arrival.limoLabel(), limoRide: () => arrival.limoRide(), toStrip: () => arrival.toStrip(), bagLabel: () => arrival.bagLabel(), shopLabel: () => arrival.shopLabel(), servicesLabel: () => arrival.servicesLabel() });
+C5.onArrive = name => { if (arrival) arrival.onLimoArrive(name); };
+arrival = createArrival({ $, state, player, cam, save, prefs, areas, limo, strip, toast, transition, enterArea, showUI, closeUI, setCoins, persist, openSlots, updateCamera: d => updateCamera(d), syncButtons, renderMini, parkCar });
 const photo = initPhoto(C5);
 const comp = initCompanion({ scene, player, car, state, limo, toast, isTouch });
 const UI_CLOSE = { people: () => { const i = $('chatIn'); if (i) i.blur(); }, photo: () => photo.close(), binoc: () => { needle.closeBinoc(); document.body.classList.remove('binocMode'); }, gallery: () => {}, cine: () => {} };
@@ -87,7 +97,7 @@ function enterArea(id, x, z, yaw) {
   const A = state.area = areas[id]; A.group.visible = true; if (A.showStrip) strip.group.visible = true;
   player.position.set(x, A.floorY || 0, z); if (yaw !== undefined) { cam.yaw = yaw; player.rotation.y = yaw + PI; }
   car.visible = id === 'strip' || !!A.showStrip; player.visible = true; $('areaName').textContent = A.label; state.emote = null; state.air = false; state.jy = state.vy = 0; state.baseY = 0; renderMini(true);
-  applyEnv(); setMusic(); }
+  applyEnv(); setMusic(); if (arrival) arrival.onEnter(id); }
 function transition(fn) { $('fade').classList.add('on'); setTimeout(() => { fn(); setTimeout(() => $('fade').classList.remove('on'), 120); }, 420); }
 
 // ---------- environment (day / sunset / night) ----------
@@ -130,7 +140,7 @@ function musicKey() { const A = state.area; if (!A) return null;
   if (A.id === 'strip' && state.driving) return prefs.radio === 'off' ? null : 'radio:' + (prefs.radio || 'hits');
   if (A.id === 'room') { const s = prefs.suiteSt || 'suite'; return s === 'off' ? null : s === 'suite' ? 'suite' : 'radio:' + s; }
   return A.music; }
-const SRC_NAME = k => !k ? '' : k.startsWith('radio:') ? `${state.limo ? 'Limo radio' : state.area.id === 'room' ? 'Suite speaker' : 'Car radio'} · ${station(k.slice(6)).icon} ${station(k.slice(6)).n}` : k === 'club' ? '🎧 DJ Tileo · Mega Club' : k === 'suite' ? '🛏️ Suite speaker · Suite Chill' : k === 'pool' ? '🏝️ Pool Deck' : k === 'needle' ? '🗼 Sky Needle' : '🦁 Kingdom Lounge';
+const SRC_NAME = k => !k ? '' : k.startsWith('radio:') ? `${state.limo ? 'Limo radio' : state.area.id === 'room' ? 'Suite speaker' : 'Car radio'} · ${station(k.slice(6)).icon} ${station(k.slice(6)).n}` : k === 'club' ? '🎧 DJ Tileo · Mega Club' : k === 'suite' ? '🛏️ Suite speaker · Suite Chill' : k === 'pool' ? '🏝️ Pool Deck' : k === 'needle' ? '🗼 Sky Needle' : k === 'airport' ? '✈️ Sin City International' : '🦁 Kingdom Lounge';
 let npT = 0; function nowPlaying(d, why) { const s = SONGS[d.song]; if (!s || !state.started) return; const el = $('nowPlay'); el.innerHTML = `♪ <b>${s.t}</b> · ${s.a}<small>${SRC_NAME(d.key)}</small>`; el.classList.add('on'); clearTimeout(npT); npT = setTimeout(() => el.classList.remove('on'), 6000);
   if (state.ui === 'music') renderMusic(); }
 // car / limo / suite stations, next song, DJ requests (📱 Music, the 📻 button while driving, B)
@@ -298,11 +308,13 @@ function inRect(p, r) { return p.x >= r[0] && p.x <= r[1] && p.z >= r[2] && p.z 
 function nearest() { if (state.ride) return net && net.rideAction(); if (state.limo || state.cine) return null; if (state.area.id === 'strip') { if (state.driving) return { label: 'Exit car', act: exitCar };
     if (Math.hypot(player.position.x - car.position.x, player.position.z - car.position.z) < 4) return { label: 'Drive convertible', act: enterCar };
     const d = strip.tileo; if (Math.hypot(player.position.x - (d.doorX - 3), player.position.z - d.doorZ) < 6) return { label: 'Enter TILEO KINGDOM', act: () => walkInto(d.doorX - 1.1, d.doorZ, enterTower) };
+    const ap = strip.airport; if (ap && Math.hypot(player.position.x - (ap.doorX - 2.5), player.position.z - ap.doorZ) < 5) return { label: 'Enter Sin City International ✈️ (baggage claim)', act: () => walkInto(ap.doorX + 0.4, ap.doorZ, enterAirport) };
     if (!state.limo && Math.hypot(player.position.x - 17, player.position.z + 330) < 5) return { label: 'Hail the stretch limo 🚘', act: () => openHail(false) };
     const k = strip.needleKiosk; if (Math.hypot(player.position.x - k.x, player.position.z - k.z) < k.r) return { label: 'Ride the Sky Needle elevator ▲', act: () => needle.rideUp() };
     return (net && net.rideAction()) || (trip && trip.near()) || comp.action(); }
   let best = null, bd = 1e9; for (const it of state.area.interacts) { if (it.when && !it.when()) continue; const d = Math.hypot(player.position.x - it.x, player.position.z - it.z); if (d < it.r && d < bd) { bd = d; best = it; } } return best || (trip && trip.near()) || comp.action(); }
 function doInteract() { if (state.ui || !state.started) return; const it = state.near; if (it) it.act(); }
+function enterAirport() { if (state.walkTo) state.walkTo = null; if (state.entering) return; state.entering = true; setTimeout(() => { state.entering = false; }, 900); transition(() => enterArea('airport', AIRPORT_DOOR.x, AIRPORT_DOOR.z, AIRPORT_DOOR.yaw)); }
 function enterTower() { if (state.walkTo) state.walkTo = null; if (state.entering) return; state.entering = true; setTimeout(() => { state.entering = false; }, 900); transition(() => enterArea('lobby', lobby.spawnDoor.x, lobby.spawnDoor.z, lobby.spawnDoor.yaw)); }
 // v6.3: walk yourself to a spot (through the opening glass doors), then carry on
 function walkInto(x, z, then) { if (tpBusy) return; state.walkTo = { x, z, then, t: 0 }; state.emote = null; }
@@ -359,7 +371,7 @@ function openShop() { const L = $('shopList'); L.innerHTML = '';
 const SKINS = ['#f6d7bd', '#f1c9a5', '#d9a47c', '#b07a52', '#8a5636', '#5e3a22', '#3d2516'], HAIRS = ['#1a1209', '#3b2412', '#7a4a1e', '#d8b45a', '#f0e0b0', '#b8321c', '#e8e0d0', '#7b2cbf', '#ff6ec7'], OUTFITS = ['#c9932e', '#111111', '#ffffff', '#b0102a', '#ff7a1a', '#7b2cbf', '#1f6f8b', '#e83e8c', '#2f7a32'];
 function swatches(id, list, key) { const el = $(id); el.innerHTML = ''; list.forEach(c => { const b = document.createElement('button'); b.style.background = c; if (save.look[key] === c) b.classList.add('on'); b.onclick = () => { save.look[key] = c; applyLook(player, save.look); swatches(id, list, key); }; el.appendChild(b); }); }
 function buildCreator(wardrobe) {
-  $('crTitle').textContent = wardrobe ? 'Wardrobe' : 'Create your guest'; $('crDone').textContent = wardrobe ? 'Done' : 'Hit the Strip'; $('crName').value = save.look.name;
+  $('crTitle').textContent = wardrobe ? 'Wardrobe' : 'Create your guest'; $('crDone').textContent = wardrobe ? 'Done' : 'Land in Vegas ✈️'; $('crName').value = save.look.name;
   swatches('swSkin', SKINS, 'skin'); swatches('swHair', HAIRS, 'hair'); swatches('swOutfit', OUTFITS, 'outfit');
   const bd = $('swBody'); bd.innerHTML = ''; for (const [k, n] of [['f', 'Female'], ['m', 'Male']]) { const b = document.createElement('button'); b.className = 'txt' + (save.look.body === k ? ' on' : ''); b.textContent = n;
     b.onclick = () => { if (save.look.body === k) return; save.look.body = k; save.look.face = ''; save.look.cut = ''; if (!HAIRSTYLES[k].includes(save.look.hairStyle)) save.look.hairStyle = HAIRSTYLES[k][0]; applyLook(player, save.look); buildCreator(wardrobe); }; bd.appendChild(b); }
@@ -383,7 +395,7 @@ function openWardrobe() { buildCreator(true); state.ui = 'creator'; state.wardro
 function beginPlay(msg) { state.started = true; $('hud').classList.remove('hidden'); syncButtons(); renderMini(true); setMusic(); if (msg) toast(msg); }
 function openCreator() { buildCreator(false); state.ui = 'creator'; $('creator').classList.remove('hidden'); state.started = false; }
 $('crDone').onclick = () => { save.look.name = ($('crName').value || 'Guest').slice(0, 16); persist(); updateBand(); $('creator').classList.add('hidden'); state.ui = null;
-  if (!state.wardrobe) { if (trip) trip.afterCreator(); else beginPlay('Welcome to the Strip! Walk into TILEO KINGDOM to check in, or grab the convertible.'); } state.wardrobe = false; };
+  if (!state.wardrobe) { if (trip) trip.afterCreator(); else { arrival.start(); beginPlay(`✈️ Welcome to Las Vegas, ${save.look.name}! Your bag is coming out on Carousel 11.`); } } state.wardrobe = false; };
 // 18+ gate: pick Free Play (sandbox, the default) or the Epic or Fail: Vegas Trip story mode
 let gateMode = URL_TRIP ? 'trip' : 'free';
 function pickGateMode(m) { gateMode = m; document.querySelectorAll('#gateModes [data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
@@ -460,6 +472,7 @@ function update(dt, t) {
     if (!state.driving && !state.limo && !state.ride && Math.abs(player.position.x) < 14.5 && A.id === 'strip') B.push({ x: player.position.x, z: player.position.z, len: 0.4, ped: true });
     if (net) for (const o of net.vehicles()) B.push(o); strip.onHonk = c => { const d = Math.hypot(c.x - player.position.x, c.z - player.position.z); if (d < 80) amb.honk(1 / (1 + d / 25)); }; }
   for (const f of A.anim) f(t, dt, player.position); if (A.showStrip) for (const f of strip.anim) f(t, dt, player.position);
+  if (arrival) arrival.update(dt);
   miniAcc += dt; if (miniAcc > (Q.key === 'low' ? 0.1 : 0.05)) { miniAcc = 0; renderMini(); }
   if (state.ui === 'mapFull') renderFullMap();
   if (trip) trip.update(dt, t);
@@ -516,10 +529,10 @@ function showLoading(p = 0.35, txt = 'Loading the Strip…') { $('loading').clas
     setTimeout(() => $('loading').classList.add('hidden'), Math.max(250, 1100 - (performance.now() - t0))); }); }
 
 // ---------- teleport (v4) ----------
-const TP_LMK = [['Bellissimo', '⛲', 'Bellissimo Fountains'], ['Luxe Pyramid', '🔺'], ['Emerald City Grand', '💚'], ['Flamingo Pink', '🦩'], ['Kingdom of Rome', '🏛️'], ['Venezia Grand', '🚤'], ['Sky Needle', '🗼']];
+const TP_LMK = [['Bellissimo', '⛲', 'Bellissimo Fountains'], ['Luxe Pyramid', '🔺'], ['Emerald City Grand', '💚'], ['Flamingo Pink', '🦩'], ['Kingdom of Rome', '🏛️'], ['Venezia Grand', '🚤'], ['Power Chord', '🎸'], ['Aurum', '🥂'], ['Bravo', '🌸'], ['Sky Needle', '🗼'], ['Sin City International', '🛬', 'Airport curb']];
 const TPD = [{ id: 'car', icon: '🚗', name: 'My Car' }, { id: 'entrance', icon: '👑', name: 'Tileo Kingdom entrance' }, { id: 'lobby', icon: '🛎️', name: 'Lobby' }, { id: 'casino', icon: '🎰', name: 'Casino' },
   { id: 'pool', icon: '🏝️', name: 'Pool Deck' }, { id: 'club', icon: '🎧', name: 'Mega Club' }, { id: 'suite', icon: '🛏️', name: 'My Suite' },
-  { id: 'needleTop', icon: '🗼', name: 'Sky Needle Top' }, { id: 'limo', icon: '🚘', name: 'Limo ride' },
+  { id: 'needleTop', icon: '🗼', name: 'Sky Needle Top' }, { id: 'limo', icon: '🚘', name: 'Limo ride' }, { id: 'airport', icon: '✈️', name: 'Airport · baggage claim' },
   ...TP_LMK.map(([lm, icon, name]) => ({ id: 'lm:' + lm, icon, name: name || lm, lm }))];
 const tpById = id => TPD.find(d => d.id === id);
 let tpBusy = false, mapPins = [];
@@ -529,7 +542,7 @@ function openTeleport() { if (!state.started) return; toggleWheel(false); const 
   for (const d of TPD) { const b = document.createElement('button'); b.dataset.tp = d.id; let sub = '';
     if (d.id === 'suite' && !save.room) { b.classList.add('locked'); sub = 'check in first'; }
     else if (d.id === 'suite') sub = 'Suite ' + save.room;
-    else if (d.id === 'needleTop') sub = '238 m deck · 360° views'; else if (d.id === 'limo') sub = state.limo ? 'riding now' : 'chauffeured Strip cruise';
+    else if (d.id === 'needleTop') sub = '238 m deck · 360° views'; else if (d.id === 'limo') sub = state.limo ? 'riding now' : 'chauffeured Strip cruise'; else if (d.id === 'airport') sub = 'Booze Library · limos';
     else if (d.id === 'car') { const p = state.area.id === 'strip' ? (state.driving ? car.position : player.position) : null; sub = state.driving ? 'you are driving' : p ? Math.round(Math.hypot(p.x - car.position.x, p.z - car.position.z)) + ' m away' : 'parked on the Strip'; }
     if (tpArea(d) === state.area.id && d.id !== 'car' && !d.lm && d.id !== 'entrance') b.classList.add('here');
     b.innerHTML = `${d.icon}<span>${d.name}</span>${sub ? `<small>${sub}</small>` : ''}`; b.onclick = () => teleport(d.id); box.appendChild(b); }
@@ -571,7 +584,7 @@ function tpArrive(d) { const to = tpArea(d), keepCar = state.driving && to === '
 function tpPins(A, P, g) { const pins = [];
   if (A.id === 'strip') { for (const d of TPD) { if (d.lm) { const l = lmk(d.lm); if (l) pins.push({ id: d.id, uv: P(l.x, l.z) }); } }
     const tk = lmk('TILEO KINGDOM'); if (tk) pins.push({ id: 'entrance', uv: P(tk.x, tk.z) }); { const uv = P(NEEDLE_X, NEEDLE_Z); pins.push({ id: 'needleTop', uv: [uv[0], uv[1] - 22] }); } pins.push({ id: 'limo', uv: P(17, -330) }); pins.push({ id: 'car', uv: P(car.position.x, car.position.z) }); return pins; }
-  const here = { needle: [['needleTop', needleA.spawn]], lobby: [['lobby', lobby.spawnDoor], ['casino', { x: 27, z: 4 }]], pool: [['pool', pool.spawnElev]], club: [['club', club.spawnElev]], room: [['suite', { x: 0, z: 7.5 }]] }[A.id] || [];
+  const here = { needle: [['needleTop', needleA.spawn]], lobby: [['lobby', lobby.spawnDoor], ['casino', { x: 27, z: 4 }]], pool: [['pool', pool.spawnElev]], club: [['club', club.spawnElev]], room: [['suite', { x: 0, z: 7.5 }]], airport: [['airport', airport.spawnElev]] }[A.id] || [];
   g.font = 'bold 14px sans-serif'; g.textAlign = 'center';
   for (const [id, sp] of here) { const uv = P(sp.x, sp.z); pins.push({ id, uv }); g.fillStyle = '#ffcf4a'; g.strokeStyle = '#000'; g.lineWidth = 3; g.strokeText('🌀 ' + tpById(id).name, uv[0], uv[1] - 14); g.fillText('🌀 ' + tpById(id).name, uv[0], uv[1] - 14); g.lineWidth = 1; }
   return pins; }
@@ -603,7 +616,7 @@ function goToSpot(area, x, z, done) { // "Go to" a friend from the Online sheet
   transition(() => { parkCar(); enterArea(area, x, z); const q = safeSpot(x, z); player.position.set(q.x, areas[area].floorY || 0, q.z); updateCamera(1); syncButtons(); renderMini(true); if (done) done(); });
 }
 net = initNet({ $, state, player, car, scene, camera, save, toast, showUI, closeUI, persist, applyProfile, goTo: goToSpot, isTouch, chime: () => amb.chime('spin'), limo, comp, tripPres: () => trip ? trip.presence() : 0 });
-window.__game.net = net; window.__game.comp = comp; Object.assign(window.__game, { closeUI, showUI, setCoins, C5, ctx, music, openMusic, cycleRadio, setMusic }); window.__game.carHit = carHit; window.__game.syncCharacters = syncCharacters;
+window.__game.net = net; window.__game.comp = comp; Object.assign(window.__game, { closeUI, showUI, setCoins, C5, ctx, music, openMusic, cycleRadio, setMusic, airport, strip, enterAirport, get arrival() { return arrival; } }); window.__game.carHit = carHit; window.__game.syncCharacters = syncCharacters;
 
 // ---------- v7: Epic or Fail: Vegas Trip (story mode, loaded from trip/ only when picked) ----------
 async function startTripMode() {
@@ -613,10 +626,10 @@ async function startTripMode() {
   Object.assign(save, ts && ts.look ? ts : { coins: 0, owned: ['solid'], room: 2407, bonusDay: '', look: { ...fpLook, style: 'solid', banded: true } });
   save.owned = ['solid']; save.room = 2407;
   showLoading(0.7, 'Packing for Vegas…');
-  try { const m = await import('./trip/trip.js?v=1793988736');
+  try { const m = await import('./trip/trip.js?v=1794000555');
     trip = await m.initTrip({ $, THREE, state, player, car, cam, camera, scene, save, prefs, savePrefs, areas, strip, lobby, pool, rooms, room, club, needleA, ctx, C5, comp, limo, needle, photo, gfx, amb, net, isTouch,
       toast, setCoins, persist, transition, enterArea, showUI, closeUI, setTod, applyLook, makeCharacter, animate, STYLES, EMOTES, CHAR, waterDepth, blocked, safeSpot, inRect, teleport, updateBand, syncButtons, renderMini,
-      updateCamera: d => updateCamera(d), faceFor, beginPlay, openCreator, buildCreator, setEmote, parkCar, exitCar, lmk, tpBusy: () => tpBusy, keys, joy }); }
+      updateCamera: d => updateCamera(d), faceFor, beginPlay, openCreator, buildCreator, setEmote, parkCar, exitCar, lmk, tpBusy: () => tpBusy, keys, joy, arrival, airport }); }
   catch (e) { console.error('[trip]', e); toast('Could not load the Vegas Trip. Reload to try again.'); }
   $('loading').classList.add('hidden'); window.__game.trip = trip;
   if (trip) trip.begin(); else openCreator();
