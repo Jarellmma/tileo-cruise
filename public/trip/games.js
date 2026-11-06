@@ -1,5 +1,5 @@
 // Epic or Fail: Vegas Trip skill jobs: DJ Booth Rhythm Gig and Bartending Rush. Each draws into a card element and resolves with a score.
-import { RECIPES, INGREDIENTS } from './data.js?v=1793987979';
+import { RECIPES, INGREDIENTS } from './data.js?v=1793988736';
 
 const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
 

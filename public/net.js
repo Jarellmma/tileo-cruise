@@ -3,7 +3,7 @@
 // Accounts are shared with TILEO Cruise Lines (same username and password); each game keeps its own saved profile.
 // Public Strips (strangers) only allow the preset chat phrases (also enforced on the server); private parties chat freely.
 import * as THREE from 'three';
-import { makeCharacter, applyLook, animate, disposeCharacter, makeCar, BAND_C, STYLES, HAIRSTYLES, EMOTES, FACES } from './characters.js?v=1793987979';
+import { makeCharacter, applyLook, animate, disposeCharacter, makeCar, BAND_C, STYLES, HAIRSTYLES, EMOTES, FACES } from './characters.js?v=1793988736';
 
 export const QUICK_SAYS = ['Hi!', 'Follow me!', 'Meet me at the pool', 'Club tonight?', 'Nice outfit!', 'Race you down the Strip', 'Lucky streak!', 'Want a limo ride?', 'Good game!', 'Bye!'];
 const AREA_LABEL = { strip: 'On the Strip', lobby: 'Lobby & Casino', pool: 'Pool Deck', rooms: 'Suites floor', room: 'In their suite', club: 'Mega Club', needle: 'Sky Needle deck' };
@@ -85,6 +85,7 @@ export function initNet(G) {
     const P = Array.isArray(d.p) ? d.p : [];
     R.tpos.set(num(P[0], -900, 900), num(P[1], -5, 400), num(P[2], -900, 900)); R.tyaw = num(d.r, -20, 20);
     R.m = MODES.has(d.m) ? d.m : ''; R.s = num(d.s, 0, 40); R.hid = !!d.h;
+    const tr = d.tr; R.tr = tr && typeof tr === 'object' && !Array.isArray(tr) ? { k: ['solo', 'bday', 'bach'].includes(tr.k) ? tr.k : 'solo', d: num(tr.d, 1, 5) | 0, b: typeof tr.b === 'string' ? tr.b.slice(0, 16) : '', w: num(tr.w, 0, 9) | 0, f: num(tr.f, 0, 200000) | 0, e: !!tr.e } : null;
     const D = Array.isArray(d.d) ? d.d : null; R.drive = D ? { x: num(D[0], -900, 900), z: num(D[1], -900, 900), h: num(D[2], -20, 20), l: !!D[3] } : null;
     const RD = Array.isArray(d.rd) ? d.rd : null; R.rd = RD && (RD[0] === 'car' || RD[0] === 'limo') && typeof RD[1] === 'string' ? { k: RD[0], host: RD[1].slice(0, 40), seat: num(RD[2], 0, 2) | 0 } : null;
     const LM = Array.isArray(d.lm) ? d.lm : null; R.lm = LM ? { s: num(LM[0], -1e7, 1e7), c: LM[1] === 'black' ? 'black' : 'white', st: !!LM[2] } : null; R.ps = !!d.ps;
@@ -162,7 +163,7 @@ export function initNet(G) {
     const pres = { v: 1, L: lookOut(save.look), a: state.area ? state.area.id : 'strip', p: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)], r: +angW(r).toFixed(2),
       m: MODES.has(state.pmode || '') ? state.pmode || '' : '', s: +(state.moving || 0).toFixed(1), h: state.cine ? 1 : 0,
       rd: N.ride ? [N.ride.k, N.ride.host, N.ride.seat] : 0, lm: state.limo && G.limo.ride ? [+G.limo.ride.s.toFixed(1), G.limo.ride.color || 'white', G.limo.ride.stand ? 1 : 0] : 0, ps: G.comp && G.comp.inCar ? 1 : 0,
-      d: state.driving ? [+c.position.x.toFixed(2), +c.position.z.toFixed(2), +angW(c.rotation.y).toFixed(2), state.lights ? 1 : 0] : 0 };
+      d: state.driving ? [+c.position.x.toFixed(2), +c.position.z.toFixed(2), +angW(c.rotation.y).toFixed(2), state.lights ? 1 : 0] : 0, tr: G.tripPres ? G.tripPres() || 0 : 0 }; // tr: Vegas Trip status (0 in Free Play)
     const js = JSON.stringify(pres); if (js === N.last) return; N.last = js; sendRaw({ t: 'p', d: pres });
   }
   // ---------------------------------------------------------------- rides: hop into another player's convertible or limo
@@ -331,5 +332,5 @@ export function initNet(G) {
 
   // test / trailer hooks: show a player or a chat line exactly as if it came from the server
   const inject = (id, d) => { readRemote(String(id), d); refresh(); }, injectSay = (id, x) => handle({ t: 'say', id: String(id), x });
-  return { N, A, update, say, openPeople, openAuth, saveSoon, rideAction, leaveRide, rideCamera, vehicles, get ride() { return N.ride; }, get online() { return N.on; }, cleanLook, inject, injectSay };
+  return { peers: () => [...N.remotes.values()], N, A, update, say, openPeople, openAuth, saveSoon, rideAction, leaveRide, rideCamera, vehicles, get ride() { return N.ride; }, get online() { return N.on; }, cleanLook, inject, injectSay };
 }

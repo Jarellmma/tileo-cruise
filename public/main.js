@@ -1,21 +1,21 @@
 // TILEO KINGDOM: Strip Life, playable prototype (Three.js, no build step)
 import * as THREE from 'three';
-import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793987979';
-import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793987979';
-import { createGfx, LOOK } from './gfx.js?v=1793987979';
-import { createAmbience } from './ambience.js?v=1793987979';
-import { createMusic, SONGS, LISTS, STATIONS, station } from './music.js?v=1793987979';
-import { initCasino } from './casino.js?v=1793987979';
-import { initNet } from './net.js?v=1793987979';
-import { initCompanion } from './companion.js?v=1793987979';
-import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793987979';
-import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793987979';
-import { PEOPLE_BASES } from './people_data.js?v=1793987979';
-import { buildStrip, updateWaters } from './world.js?v=1793987979';
-import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793987979';
-import { buildLimo } from './limo.js?v=1793987979';
-import { initPhoto } from './photo.js?v=1793987979';
-import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793987979';
+import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793988736';
+import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793988736';
+import { createGfx, LOOK } from './gfx.js?v=1793988736';
+import { createAmbience } from './ambience.js?v=1793988736';
+import { createMusic, SONGS, LISTS, STATIONS, station } from './music.js?v=1793988736';
+import { initCasino } from './casino.js?v=1793988736';
+import { initNet } from './net.js?v=1793988736';
+import { initCompanion } from './companion.js?v=1793988736';
+import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793988736';
+import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793988736';
+import { PEOPLE_BASES } from './people_data.js?v=1793988736';
+import { buildStrip, updateWaters } from './world.js?v=1793988736';
+import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793988736';
+import { buildLimo } from './limo.js?v=1793988736';
+import { initPhoto } from './photo.js?v=1793988736';
+import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793988736';
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window; if (isTouch) document.body.classList.add('touch');
@@ -602,7 +602,7 @@ function goToSpot(area, x, z, done) { // "Go to" a friend from the Online sheet
   if (!state.started || tpBusy || state.cine || !areas[area]) return; if (trip && !trip.canEnter(area)) return; closeUI(); toggleWheel(false);
   transition(() => { parkCar(); enterArea(area, x, z); const q = safeSpot(x, z); player.position.set(q.x, areas[area].floorY || 0, q.z); updateCamera(1); syncButtons(); renderMini(true); if (done) done(); });
 }
-net = initNet({ $, state, player, car, scene, camera, save, toast, showUI, closeUI, persist, applyProfile, goTo: goToSpot, isTouch, chime: () => amb.chime('spin'), limo, comp });
+net = initNet({ $, state, player, car, scene, camera, save, toast, showUI, closeUI, persist, applyProfile, goTo: goToSpot, isTouch, chime: () => amb.chime('spin'), limo, comp, tripPres: () => trip ? trip.presence() : 0 });
 window.__game.net = net; window.__game.comp = comp; Object.assign(window.__game, { closeUI, showUI, setCoins, C5, ctx, music, openMusic, cycleRadio, setMusic }); window.__game.carHit = carHit; window.__game.syncCharacters = syncCharacters;
 
 // ---------- v7: Epic or Fail: Vegas Trip (story mode, loaded from trip/ only when picked) ----------
@@ -613,7 +613,7 @@ async function startTripMode() {
   Object.assign(save, ts && ts.look ? ts : { coins: 0, owned: ['solid'], room: 2407, bonusDay: '', look: { ...fpLook, style: 'solid', banded: true } });
   save.owned = ['solid']; save.room = 2407;
   showLoading(0.7, 'Packing for Vegas…');
-  try { const m = await import('./trip/trip.js?v=1793987979');
+  try { const m = await import('./trip/trip.js?v=1793988736');
     trip = await m.initTrip({ $, THREE, state, player, car, cam, camera, scene, save, prefs, savePrefs, areas, strip, lobby, pool, rooms, room, club, needleA, ctx, C5, comp, limo, needle, photo, gfx, amb, net, isTouch,
       toast, setCoins, persist, transition, enterArea, showUI, closeUI, setTod, applyLook, makeCharacter, animate, STYLES, EMOTES, CHAR, waterDepth, blocked, safeSpot, inRect, teleport, updateBand, syncButtons, renderMini,
       updateCamera: d => updateCamera(d), faceFor, beginPlay, openCreator, buildCreator, setEmote, parkCar, exitCar, lmk, tpBusy: () => tpBusy, keys, joy }); }

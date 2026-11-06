@@ -121,3 +121,15 @@ body.tripShowing #hud > * { display: none !important; }
 .tStats div { background: #ffffff0a; border-radius: 10px; padding: 6px 8px; display: flex; flex-direction: column; }
 .tStats span { font-size: 11.5px; opacity: .75; } .tStats b { font-size: 14px; }
 .bfTag .nname { border-color: #ff6ec7aa; }
+
+/* Stage 3: locals, crew, romance */
+.tToneRow { display: flex; gap: 6px; margin: 4px 0 8px; } .tToneRow button { flex: 1; padding: 10px 4px; }
+.locTag .nname { padding-left: 8px; border-color: #ff9ad5aa; } .locTag .nname::before { display: none; }
+.tRank.rL { border-color: #ff6ec7; background: radial-gradient(circle at 50% 0, #3a1030, #0b0805 70%); } .tRank.rL b { color: #ffb3e0; } .tRank.rL span { background: #ff6ec7; }
+.tIntr { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+
+/* Stage 4: trip buddy + leaderboards */
+.tScore { text-align: center; margin: 0 0 10px; font-size: 14px; } .tScore b { color: #ffd77a; font-size: 18px; }
+.lbList { margin: 6px 0; padding-left: 22px; } .lbList li { padding: 5px 0; border-bottom: 1px solid #ffffff12; display: grid; grid-template-columns: 1fr auto; gap: 0 8px; }
+.lbList li span { color: #ffd77a; font-weight: 700; } .lbList li small { grid-column: 1 / -1; opacity: .7; font-size: 11.5px; } .lbList li.me b { color: #ff9ad5; }
+.lbTabs { flex-wrap: wrap; }

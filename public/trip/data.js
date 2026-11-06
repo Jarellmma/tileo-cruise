@@ -94,8 +94,11 @@ export const WISHES = {
   hotTub: 'Soak in a rooftop hot tub together',
   selfie2: 'Selfies at 2 different Strip landmarks',
   tacos2am: '2 AM street tacos (midnight to 4 AM)',
+  crew3: 'Recruit a crew of 3 Vegas locals',
+  buddyHour: 'Hang out with your trip buddy for an hour',
+  suiteParty: 'Throw a suite party with your crew',
 };
-export const WISH_SETS = { solo: ['dance60', 'bjWin', 'steak', 'sunset', 'photo4'], bday: ['shots', 'steak2', 'squad', 'limo'], bach: ['revue', 'vip', 'danceTogether', 'squad'] };
+export const WISH_SETS = { solo: ['dance60', 'crew3', 'steak', 'sunset', 'photo4'], bday: ['shots', 'steak2', 'squad', 'limo'], bach: ['revue', 'vip', 'danceTogether', 'squad'] };
 export const BESTIE_WISH = { roxy: 'roulette3', marcus: 'hotTub', tiff: 'selfie2', kev: 'tacos2am' };
 
 // 2 AM wander-off spots
@@ -135,6 +138,7 @@ export const LIFEGUARD = ['Lifeguard: "Whoa! No street clothes in the pool, pal.
 
 export const RANKS = [
   { k: 'S', n: '👑 Legend of the Strip', d: 'Every wish, a happy bestie, cash to spare. They\'ll write songs about this trip.' },
+  { k: 'L', n: '💘 Vegas Love Story', d: 'You came for a trip and found {who}. What happens in Vegas… might not stay in Vegas.' },
   { k: 'A+', n: '🎉 Bestie of the Century', d: 'Your bestie will be talking about this trip at your wedding. And theirs.' },
   { k: 'A', n: '💎 Vegas High Roller', d: 'You came with lint and left with a bankroll. Respect.' },
   { k: 'B', n: '🥂 Survived Sin City', d: 'Fed, watered, mostly dignified. A solid Vegas run.' },

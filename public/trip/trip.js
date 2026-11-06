@@ -3,10 +3,12 @@
 // earn Trip Cash with skill jobs, find your wallet, look after your bestie and rack up Fun before Day 5 checkout.
 // Loaded only when the player picks the trip on the 18+ gate (or ?mode=trip). main.js swaps its save object to the trip's own key first,
 // so everything here (coins = Trip Cash, look, outfits) lives in 'tileoKingdom.trip.v1' and Free Play is never touched.
-import { START_MIN, END_MIN, SPEEDS, TRIP_TYPES, BACKSTORIES, BESTIES, OUTFITS, ACCESSORIES, ITEMS, VENUES, WISHES, WISH_SETS, BESTIE_WISH, WANDER, BLACKOUTS, WAKE_SPOTS, BOUNCER, LIFEGUARD, RANKS, REVUE } from './data.js?v=1793987979';
-import { djGig, bartend } from './games.js?v=1793987979';
-import { buildTripWorld, SPOTS } from './world.js?v=1793987979';
-import { createBestie, moodFace } from './bestie.js?v=1793987979';
+import { START_MIN, END_MIN, SPEEDS, TRIP_TYPES, BACKSTORIES, BESTIES, OUTFITS, ACCESSORIES, ITEMS, VENUES, WISHES, WISH_SETS, BESTIE_WISH, WANDER, BLACKOUTS, WAKE_SPOTS, BOUNCER, LIFEGUARD, RANKS, REVUE } from './data.js?v=1793988736';
+import { djGig, bartend } from './games.js?v=1793988736';
+import { buildTripWorld, SPOTS } from './world.js?v=1793988736';
+import { createBestie, moodFace } from './bestie.js?v=1793988736';
+import { createLocals, LOCALS, INTERESTS } from './locals.js?v=1793988736';
+import { createSocial } from './social.js?v=1793988736';
 
 const clamp = v => Math.max(0, Math.min(100, v)), pick = a => a[Math.random() * a.length | 0], $$ = n => '$' + Math.round(n).toLocaleString();
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
@@ -51,7 +53,7 @@ export async function initTrip(G) {
   const money = { get cash() { return save.coins; } };
   function earn(n, why) { G.setCoins(save.coins + n); if (T) T.stats.earned += n; if (why) G.toast(why); }
   function spend(n) { if (save.coins < n) return false; G.setCoins(save.coins - n); if (T) T.stats.spent += n; return true; }
-  function addFun(n, why, raw) { if (!T) return 0; const v = Math.round(raw ? n : n * (0.5 + T.m.vibe / 100)); /* Vibe scales everyday Fun; quest rewards are fixed */ T.fun += v; if (why) G.toast(`⭐ +${v} Fun · ${why}`); return v; }
+  function addFun(n, why, raw) { if (!T) return 0; const v = Math.round(raw ? n : n * (0.5 + T.m.vibe / 100) * (1 + 0.15 * (T.crew ? T.crew.length : 0)) * (social ? social.funMult() : 1)); /* Vibe scales everyday Fun; quest rewards are fixed */ T.fun += v; if (why) G.toast(`⭐ +${v} Fun · ${why}`); return v; }
   const styleScore = () => { if (!T) return 0; let s = OUTFITS[T.wearing].style + T.accOn.reduce((a, k) => a + ACCESSORIES[k].style, 0) + (T.back === 'influencer' ? 15 : 0); if (T.m.fresh < 30) s *= 0.6; return Math.min(100, Math.round(s)); };
   const charm = () => Math.min(100, Math.round(styleScore() * 0.5 + T.m.vibe * 0.3 + T.m.fresh * 0.2 + (T.back === 'influencer' ? 15 : 0)));
   const statement = () => !!OUTFITS[T.wearing].statement || T.accOn.length > 0;
@@ -64,7 +66,7 @@ export async function initTrip(G) {
     const m = T.m, hr = hour(), night = hr >= 22 || hr < 6, A = state.area ? state.area.id : 'strip', rest = act === 'sleep' || act === 'nap' || act === 'blackout';
     const dancing = !act && state.emote === 'dance', inClub = A === 'club', sun = !rest && state.tod === 'day' && (A === 'strip' || A === 'pool' || A === 'needle');
     const hotTub = !act && A === 'pool' && state.pmode === 'sit' && G.waterDepth(player.position) > 0.3, T0 = top();
-    let dE = rest ? 12 : -4 * (night ? (T.back === 'party' ? 0.65 : 1) * 1.4 : 1);
+    let dE = rest ? 12 : -4 * (night ? (T.back === 'party' ? 0.65 : 1) * 1.4 : 1) * (1 + 0.08 * (T.crew ? T.crew.length : 0));
     if (!rest) { if (dancing) dE -= 5; if (act === 'work') dE -= 4; if (m.buzz > T0) dE *= 1.3; if (m.hunger < 15 || m.hyd < 15) dE *= 1.5; if (T.hangover) dE *= 1.35; if (act === 'show' || act === 'eat') dE = -2; if (act === 'shower') dE = 0; }
     m.energy += dE * h; m.hunger -= (rest ? 2.5 : 6) * h; m.hyd -= (rest ? 2.5 : 6 * (sun ? 1.25 : 1) * (m.buzz > 40 ? 1.2 : 1)) * h; m.buzz -= (rest ? 16 : 12) * h;
     let fr = rest ? 1 : 3; if (T.wearing === 'plane' && day() >= 2) fr *= 2; if (dancing) fr *= 1.6; if (act === 'work') fr *= 1.5; if (act !== 'shower') m.fresh -= fr * h;
@@ -75,6 +77,7 @@ export async function initTrip(G) {
     if (!rest && !act) { let f = 0; if (sweet) f += 35; if (dancing && inClub) f += 70 * (T.back === 'dj' ? 1.5 : 1); if (hotTub) f += 15; if (state.limo) f += 40; if (A === 'needle') f += 15; if (inClub) f += 8; if (f) addFun(f * h); }
     for (const [k] of METERS) m[k] = clamp(m[k]);
     if (!rest && m.buzz > T0 + 8) { T.overdid = true; warn('sloppy', 75, '🥴 You\'re getting sloppy: past your Buzz sweet spot. Water or a smoothie, or tomorrow\'s hangover is on you.'); }
+    if (locals) locals.tick(h);
     if (bestie) bestie.tick(h, act, { dancing, area: A, vibe: m.vibe, limo: !!state.limo, hotTub, casino: A === 'lobby' && player.position.x > 20 });
   }
   function warn(k, everyMin, msg) { const l = T.lastWarn[k] ?? -1e9; if (T.min - l < everyMin) return; T.lastWarn[k] = T.min; G.toast(msg); }
@@ -83,6 +86,7 @@ export async function initTrip(G) {
   function timeEvents(a, b, jumping) {
     const cross = hm => { for (let d = Math.floor(a / 1440); d <= Math.floor(b / 1440); d++) { const x = d * 1440 + hm; if (a < x && b >= x) return d + 1; } return 0; };
     let d; if ((d = cross(0))) { if (d <= 5) dayBanner(`DAY ${d}`, d === 5 ? 'Checkout at 12:00 PM' : 'Midnight on the Strip'); }
+    if (cross(5 * 60) && locals) locals.disband();
     if (cross(6 * 60) && T.overdid) { T.overdid = false; T.hangover = true; G.toast('🤕 Morning hangover: Energy and Vibe drain faster until you drink water or a Recovery Smoothie.'); }
     if (bestie && bestie.lost && cross(7 * 60)) bestie.comeHome(15, `found my way back to the suite. why is there a traffic cone in our tub. also: thanks for nothing 🙃`);
     if (cross(0) === 4 && T.quest.wallet < 3) { T.quest.cold = true; if (world) world.npcs.pick.visible = false; text('Lobby Security', 'The flamingo-jacket guy checked out of town. Your wallet trail just went cold. Sorry, friend.'); }
@@ -111,6 +115,7 @@ export async function initTrip(G) {
     for (const id of V.items) { const it = ITEMS[id], bb = [[`Buy ${$$(it.price)}`, () => buy(id, false, key), 'gold', save.coins < it.price]];
       if (two) bb.push([`For two ${$$(it.price * 2)}`, () => buy(id, true, key), '', save.coins < it.price * 2]);
       rowItem(list, it.icon, it.n, it.d + (it.hours ? '' : ''), bb); }
+    const crewN = locals ? locals.crew.length : 0; if (crewN && V.items.some(i => ITEMS[i].booze)) { const it = ITEMS[V.items.find(i => ITEMS[i].booze)], n = crewN + 1 + (two ? 1 : 0); rowItem(list, '🥂', `Round for the crew (${n} × ${it.n})`, 'Crew Mood + Connection up, big Fun', [[`${$$(it.price * n)}`, () => crewRound(it, n, key), 'gold', save.coins < it.price * n]]); }
     if (V.gig) rowItem(list, '🍹', 'Work a Bartending Rush shift', '1.5 h · wage $25 + tips · costs Energy', [['Work shift', () => workBar(), '', T.m.energy < 20]]); }
   function buy(id, two, venue) { const it = ITEMS[id], cost = it.price * (two ? 2 : 1); if (!spend(cost)) return G.toast('💸 Not enough Trip Cash.');
     const m = T.m, splurge = it.splurge && T.back === 'divorcee' ? 1.25 : 1, fx = it.fx || {}, as = it.as || id;
@@ -159,6 +164,13 @@ export async function initTrip(G) {
   function onBed() { if (!running()) return G.toast('You stretch out on the tiger-print throw.'); const hr = hour(), canSleep = hr >= 20 || hr < 9.5, toTen = hr < 10 ? 10 - hr : 34 - hr;
     dlg({ title: '😴 King bed', html: `<p class="fine">${clock()} · Energy ${Math.round(T.m.energy)}%${bestie && bestie.lost ? `<br>⚠️ ${bestie.B.n} is still out there. Sleeping now will hurt their Mood a lot.` : ''}</p>`,
       buttons: [['😴 Power Nap · 3 h', () => sleep(3, 'nap'), 'gold'], [canSleep ? `🌙 Sleep until 10:00 AM (${Math.round(toTen)} h)` : '🌙 Too early to sleep (after 8 PM)', () => { if (!canSleep) { G.toast('Too early for bed: it\'s Vegas. Nap instead, or sleep after 8 PM.'); return false; } sleep(toTen, 'sleep'); }, canSleep ? '' : 'ghost'], ['Cancel']] }); }
+  function crewRound(it, n, venue) { if (!spend(it.price * n)) return G.toast('💸 Not enough Trip Cash.'); for (const [k, v] of Object.entries(it.fx || {})) T.m[k] = clamp(T.m[k] + v); T.m.vibe = clamp(T.m.vibe + 6);
+    for (const id of locals.crew) { const s = locals.S(id); s.mood = Math.min(100, (s.mood ?? 60) + 10); s.c = Math.min(100, s.c + 3); s.buzz = Math.min(100, s.buzz + 15); }
+    if (bestie && bestie.present()) { bestie.feed(it); bestie.react('drink'); } addFun(40 + 25 * n); if (venue === 'Tiger Bar' && bestie && bestie.present()) wish('shots'); G.toast(`🥂 A round for the crew! (-${$$(it.price * n)})`); persist(); openVenue(venue); }
+  function suiteParty() { if (!running()) return; const n = locals.crew.length, hr = hour(); if (n < 2) return G.toast('🎉 You need at least 2 crew members for a suite party.'); if (!(hr >= 21 || hr < 3)) return G.toast('🎉 Suite parties start at 9 PM.'); if (T.partyDay === day()) return G.toast('🎉 One legendary suite party a night. The neighbors have limits.');
+    dlg({ title: '🎉 Suite 2407 party', html: `<p>Room service platters, the speaker on Party 129 and the whole crew${bestie && bestie.present() ? ` plus ${bestie.B.n}` : ''}. About 1.5 hours, $30 for snacks.</p>`, buttons: [['🎉 Party · $30', () => { if (!spend(30)) { G.toast('💸 Not enough Trip Cash.'); return false; } T.partyDay = day();
+      jump(1.5, 'show', '🎉 The suite party was legendary. Someone taught the minibar to dance.', () => { addFun(450 + 100 * n, null, true); T.m.vibe = clamp(T.m.vibe + 15); for (const id of locals.crew) { const s = locals.S(id); s.mood = Math.min(100, (s.mood ?? 60) + 20); s.c = Math.min(100, s.c + 8); } if (bestie) bestie.mood(15); wish('suiteParty'); }); }, 'gold'], ['Not now']] }); }
+  function sleepAway(h, after) { if (bestie && bestie.lost) bestie.comeHome(35, `you went to SLEEP?? i was out there alone. i ate a hot dog off a statue. -35 Mood, bestie 😤`); jump(h, 'sleep', null, after); }
   function sleep(h, act) { if (bestie && bestie.lost) bestie.comeHome(35, `you went to SLEEP?? i was out there alone. i ate a hot dog off a statue. -35 Mood, bestie 😤`);
     jump(h, act, act === 'nap' ? '😴 Power nap done. Energy back up.' : `☀️ Day ${Math.floor((T.min + h * 60) / 1440) + 1} · 10:00 AM. Good morning, Vegas.`, () => { if (act === 'sleep') { T.m.energy = Math.max(T.m.energy, 96); if (bestie) bestie.bf.energy = Math.max(bestie.bf.energy, 90); } }); }
 
@@ -259,14 +271,18 @@ export async function initTrip(G) {
       <div class="tMeters">${meters}</div>${flags.length ? `<p class="hubFlags">${flags.join('<br>')}</p>` : ''}
       <p class="fine">👔 ${OUTFITS[T.wearing].n}${T.accOn.length ? ' + ' + T.accOn.map(k => ACCESSORIES[k].n).join(', ') : ''} · Style ${styleScore()} · Charm ${charm()}${statement() ? ' · 💎 statement' : ''}</p>
       ${bf}<h3 id="hubWishes">📋 Wish List</h3><ul class="hubList">${W}</ul>
+      ${G.net && G.net.N && G.net.N.on || T.buddyMode ? `<h3>👥 Trip buddy</h3>${social.hubHtml()}${T.buddyMode && !T.bestie ? '<div class="hubSpeed" id="npcBf">Call in an NPC bestie: ' + Object.entries(BESTIES).map(([k, b]) => `<button data-bf="${k}">${b.icon} ${b.n}</button>`).join('') + '</div>' : ''}` : ''}
+      <h3>💬 People you've met</h3>${locals ? locals.hubHtml() : ''}<div class="hubSpeed">Interested in: ${Object.entries(INTERESTS).map(([id, [ic, n]]) => `<button data-int="${id}" class="${T.interest === id ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>
       <h3>🗺️ Side quests</h3><ul class="hubList"><li>${wallet}</li><li>${bag}</li></ul>
       <h3>💼 Ways to earn</h3><ul class="hubList"><li>🎧 DJ Booth gig at the Mega Club (2 h)</li><li>🍹 Bartending Rush at any resort bar (1.5 h)</li><li>📸 Photo Gigs: snap Strip landmarks in photo mode (each spot once a day)</li><li>🎰 Or risk it at the tables…</li></ul>
       <h3 id="hubMsgs">📱 Texts</h3><ul class="hubList msgs">${msgs}</ul>
       <p class="fine">${BK().perk}: ${BK().perkD}</p>
-      <div class="tBtns"><button class="ghost" id="hubFree">🎲 Back to Free Play</button><button class="gold" id="hubClose">Close</button></div>`;
-    c.querySelectorAll('.hubSpeed button').forEach(b => b.onclick = () => { T.speed = +b.dataset.s; openHub(); hudNow(); });
+      <div class="tBtns"><button id="hubLb">🏆 Leaderboard</button><button class="ghost" id="hubFree">🎲 Back to Free Play</button><button class="gold" id="hubClose">Close</button></div>`;
+    c.querySelectorAll('.hubSpeed button[data-s]').forEach(b => b.onclick = () => { T.speed = +b.dataset.s; openHub(); hudNow(); });
+    c.querySelectorAll('.hubSpeed button[data-int]').forEach(b => b.onclick = () => { T.interest = b.dataset.int; persist(); openHub(); });
     const hb = c.querySelector('#hubBf'); if (hb) hb.onclick = () => openCheckIn();
-    c.querySelector('#hubClose').onclick = () => G.closeUI();
+    c.querySelector('#hubClose').onclick = () => G.closeUI(); c.querySelector('#hubLb').onclick = () => social.board(); social.bindHub(c);
+    c.querySelectorAll('#npcBf [data-bf]').forEach(b => b.onclick = () => { callBestie(b.dataset.bf); openHub(); });
     c.querySelector('#hubFree').onclick = () => { persist(); const u = new URL(location.href); u.searchParams.delete('mode'); location.href = u.pathname + u.search; };
     G.showUI('tripHub'); if (sec) { const t = c.querySelector(sec === 'wishes' ? '#hubWishes' : '#hubMsgs'); if (t) t.scrollIntoView({ block: 'start' }); } }
 
@@ -280,63 +296,70 @@ export async function initTrip(G) {
     const bb = $('thBf'); if (bestie) { bb.classList.remove('hidden'); bb.textContent = bestie.lost ? `📱 ${bestie.B.n} is missing!` : `${bestie.B.icon} ${bestie.B.n} ${moodFace(T.bf.mood)} ${Math.round(T.bf.mood)}% · 💬`; bb.classList.toggle('alert', !!bestie.lost); } else bb.classList.add('hidden'); }
 
   // ---------------- setup wizard ----------------
-  function showSetup() { const c = setupCard; const pickS = { type: 'solo', back: 'divorcee', bestie: 'roxy' }; const old = save.trip && save.trip.v === 1 ? save.trip : null;
+  function showSetup() { const c = setupCard; const pickS = { type: 'solo', back: 'divorcee', bestie: 'roxy', interest: (save.trip && save.trip.interest) || 'everyone' }; const old = save.trip && save.trip.v === 1 ? save.trip : null;
     const opt = (k, items) => `<div class="tOpts" data-k="${k}">${Object.entries(items).map(([id, o]) => `<button data-id="${id}" class="tOpt${pickS[k] === id ? ' on' : ''}"><b>${o.icon} ${o.n}</b><small>${k === 'back' ? `${$$(o.cash)} start · <i>${o.perk}</i>: ${o.perkD}` : k === 'bestie' ? `${o.tag} · loves ${o.loves}` : o.d}</small></button>`).join('')}</div>`;
     c.innerHTML = `<h2>✈️ Epic or Fail: Vegas Trip</h2><p class="fine">Five days. No wallet. No luggage. A prepaid suite and a dream. Survive to checkout on Day 5 at noon and make it legendary. Play money only.</p>
       ${old && !old.ended ? `<div class="tResume"><b>Saved trip</b><span>${TRIP_TYPES[old.type].n} · Day ${Math.floor(old.min / 1440) + 1}, ${clock(old.min)} · ${$$(save.coins)} · ⭐ ${old.fun.toLocaleString()}${old.bestie ? ' · with ' + BESTIES[old.bestie].n : ''}</span><button class="gold" id="tsResume">▶ Resume trip</button></div><p class="fine">…or start a fresh 5-day run (replaces the saved trip):</p>` : old && old.ended ? `<p class="fine">Last trip: ${old.rank || ''}</p>` : ''}
-      <h3>1 · Trip type</h3>${opt('type', TRIP_TYPES)}<h3>2 · Your backstory</h3>${opt('back', BACKSTORIES)}<div id="tsBf"><h3>3 · Your bestie</h3>${opt('bestie', BESTIES)}</div>
+      <h3>1 · Trip type</h3>${opt('type', TRIP_TYPES)}<h3>2 · Your backstory</h3>${opt('back', BACKSTORIES)}<div id="tsBf"><h3>3 · Your bestie</h3>${opt('bestie', G.net && G.net.N && G.net.N.on ? { ...BESTIES, friend: { n: 'A real friend (online)', icon: '👥', tag: 'Plays on their own device', loves: 'whatever you two get up to. Pair up in 📱 → My trip once you\'re both on the Strip' } } : BESTIES)}</div><h3>4 · Romance: interested in</h3><div class="tOpts tIntr" data-k="interest">${Object.entries(INTERESTS).map(([id, [ic, n]]) => `<button data-id="${id}" class="tOpt${pickS.interest === id ? ' on' : ''}"><b>${ic} ${n}</b></button>`).join('')}</div><p class="fine">Vegas locals keep their own schedules: chat, build Connection, recruit a crew, and maybe someone comes back to your suite (non-explicit, fade to black, they can always say no).</p>
       <div class="tBtns"><button class="gold" id="tsGo">Start the trip ✈️</button></div>`;
     const sync = () => { c.querySelectorAll('.tOpts').forEach(g => g.querySelectorAll('.tOpt').forEach(b => b.classList.toggle('on', pickS[g.dataset.k] === b.dataset.id))); c.querySelector('#tsBf').classList.toggle('hidden', pickS.type === 'solo'); };
     c.querySelectorAll('.tOpts').forEach(g => g.querySelectorAll('.tOpt').forEach(b => b.onclick = () => { pickS[g.dataset.k] = b.dataset.id; sync(); })); sync();
-    c.querySelector('#tsGo').onclick = () => startNew(pickS.type, pickS.back, pickS.type === 'solo' ? null : pickS.bestie);
+    c.querySelector('#tsGo').onclick = () => startNew(pickS.type, pickS.back, pickS.type === 'solo' ? null : pickS.bestie, pickS.interest);
     const r = c.querySelector('#tsResume'); if (r) r.onclick = () => resume();
     G.showUI('tripSetup'); }
-  function startNew(type, back, bf) { if (bestie) { bestie.dispose(); bestie = null; }
+  function startNew(type, back, bf0, interest = 'everyone') { const buddyMode = bf0 === 'friend', bf = buddyMode ? null : bf0; if (bestie) { bestie.dispose(); bestie = null; } if (locals) { locals.dispose(); locals = null; }
     T = save.trip = { v: 1, type, back, bestie: bf, min: START_MIN, speed: 1, m: { energy: 85, hunger: 55, hyd: 50, buzz: 0, vibe: 50, fresh: 45 }, fun: 0, overdid: false, hangover: false,
       closet: ['plane'], accOwned: [], wearing: 'plane', accOn: [], stats: { jobs: 0, photos: 0, blackouts: 0, wins: 0, spent: 0, earned: 0 }, paid: {}, lm: [], selfies: [],
-      quest: { wallet: 0, cold: false, suitcase: 0 }, zero: 0, low: false, wishes: [...WISH_SETS[type], ...(bf ? [BESTIE_WISH[bf]] : [])].map(id => ({ id, done: false })),
+      quest: { wallet: 0, cold: false, suitcase: 0 }, zero: 0, low: false, wishes: [...WISH_SETS[type], ...(bf ? [BESTIE_WISH[bf]] : buddyMode ? ['buddyHour'] : [])].map(id => ({ id, done: false })), buddyMode,
       danceS: 0, danceTog: 0, rlSpins: 0, hotTubS: 0, needleS: 0, limoS: 0, bf: bf ? { energy: 80, hunger: 50, buzz: 0, mood: 65, lost: null, wanderNight: 0, hypeAt: -999 } : null,
-      msgs: [], ended: false, endReason: '', rank: '', pos: null, lastWarn: {}, cdj: -999, cbar: -999, vipDay: 0 };
+      msgs: [], ended: false, endReason: '', rank: '', pos: null, lastWarn: {}, cdj: -999, cbar: -999, vipDay: 0, interest, loc: {}, crew: [], nights: 0 };
     G.setCoins(BACKSTORIES[back].cash); wear('plane'); G.setTod(todFor(hour())); if (world) world.npcs.pick.visible = false;
     G.closeUI(); G.parkCar(); G.enterArea('strip', 40, -318, -Math.PI / 2 + 0.25); G.cam.pitch = 0.18;
     if (bf) bestie = createBestie(G, T, { text, fun: (n, why) => addFun(n, why, true), toast: G.toast });
-    const B = BACKSTORIES[back], bfL = bf ? `<li>Keep <b>${BESTIES[bf].n}</b> happy (fed, watered, not lost). They love ${BESTIES[bf].loves}.</li>` : '';
+    locals = makeLocals();
+    const B = BACKSTORIES[back], bfL = bf ? `<li>Keep <b>${BESTIES[bf].n}</b> happy (fed, watered, not lost). They love ${BESTIES[bf].loves}.</li>` : buddyMode ? '<li>👥 Pair up with your friend: 📱 → My trip → Trip buddy. Stick together for +25% Fun.</li>' : '';
     dlg({ title: `🛬 Day 1 · 10:00 AM`, cls: 'introCard', html: `<p>${B.story}</p><p>Now you're at the TILEO KINGDOM curb with <b>${$$(B.cash)}</b>, a prepaid suite (2407, Floor 24) and the clothes on your back.</p>
-      <ul class="hubList"><li>Survive until <b>checkout: Day 5, 12:00 PM</b> (1 real minute = 1 game hour).</li><li>Watch your meters: eat, hydrate, rest, shower. Keep your Buzz in the gold sweet spot.</li><li>A security guard by the lobby's Gold Lion Fountain saw who took your wallet. Track it down <b>before Day 4</b>.</li>${bfL}<li>Tick off your Wish List and rack up ⭐ Fun.</li></ul>
+      <ul class="hubList"><li>Survive until <b>checkout: Day 5, 12:00 PM</b> (1 real minute = 1 game hour).</li><li>Watch your meters: eat, hydrate, rest, shower. Keep your Buzz in the gold sweet spot.</li><li>A security guard by the lobby's Gold Lion Fountain saw who took your wallet. Track it down <b>before Day 4</b>.</li>${bfL}<li>Meet the locals (name tags), build Connection, recruit a crew of up to 3.</li><li>Tick off your Wish List and rack up ⭐ Fun.</li></ul>
       <p class="fine">Tap the trip panel (top left) or 📱 → My trip for everything. Taco & water cart is right here on the forecourt.</p>`, buttons: [["Let's go 🎲", () => { setTimeout(() => go(`💵 ${$$(B.cash)} and a dream. Welcome to Vegas, ${save.look.name}.`), 30); }, 'gold']] });
     persist(); }
-  function resume() { T = save.trip; if (bestie) { bestie.dispose(); bestie = null; } wear(T.wearing); G.closeUI(); G.parkCar();
+  function resume() { T = save.trip; if (bestie) { bestie.dispose(); bestie = null; } if (locals) { locals.dispose(); locals = null; } wear(T.wearing); G.closeUI(); G.parkCar();
     const P = T.pos; if (P && G.areas[P.a]) { G.enterArea(P.a, P.x, P.z, P.yaw); const q = G.safeSpot(P.x, P.z); player.position.set(q.x, G.areas[P.a].floorY || 0, q.z); } else G.enterArea('strip', 40, -318, -Math.PI / 2 + 0.25);
     G.setTod(todFor(hour())); if (T.bestie) { bestie = createBestie(G, T, { text, fun: (n, why) => addFun(n, why, true), toast: G.toast }); if (T.bf.lost) { const l = T.bf.lost; T.bf.lost = null; bestie.wander(l); } }
     if (world) world.npcs.pick.visible = T.quest.wallet === 2 && !T.quest.cold;
+    locals = makeLocals();
     go(`✈️ Welcome back: Day ${day()} · ${clock()} · ${$$(save.coins)}`); }
   function go(msg) { hud.classList.remove('hidden'); document.body.classList.add('tripPlaying'); G.beginPlay(msg); lastArea = state.area.id; hudNow(); persist(); }
 
   // ---------------- ending ----------------
   function endTrip(reason) { if (!T || T.ended) return; T.ended = true; T.endReason = reason; busy = false; const wDone = T.wishes.filter(w => w.done).length, cash = save.coins, fun = T.fun, mood = T.bf ? T.bf.mood : null, solo = !T.bf;
     let k; if (reason === 'greyhound') k = 'F'; else if (fun >= 6000 && wDone === T.wishes.length && (solo || mood >= 75) && cash >= 150 && T.stats.blackouts === 0) k = 'S';
-    else if (!solo && mood >= 80 && wDone >= 4) k = 'A+'; else if (cash >= 400 || (fun >= 4500 && wDone >= 3)) k = 'A'; else if (fun >= 2200 || wDone >= 3) k = 'B'; else k = 'C';
-    const R = RANKS.find(r => r.k === k); T.rank = `${R.n} (${R.k})`; persist(); G.closeUI(); G.parkCar();
-    const st = [['💵 Final cash', $$(cash)], ['⭐ Fun points', fun.toLocaleString()], ['📋 Wishes', `${wDone} / ${T.wishes.length}`], ['🫶 Bestie happiness', solo ? 'Solo trip' : `${moodFace(mood)} ${Math.round(mood)}%`],
-      ['👔 Final fit', `${OUTFITS[T.wearing].n} · Style ${styleScore()} · Charm ${charm()}`], ['💼 Jobs worked', T.stats.jobs], ['📸 Photos sold', T.stats.photos], ['😵 Blackouts', T.stats.blackouts], ['🎰 Wins', T.stats.wins], ['💼 Wallet', T.quest.wallet >= 3 ? 'recovered' : 'lost forever']];
+    else if (locals && locals.loveStory()) k = 'L';
+    else if ((!solo && mood >= 80 && wDone >= 4) || (T.buddyMode && !T.bf && social.togetherPct() >= 60 && wDone >= 4)) k = 'A+'; else if (cash >= 400 || (fun >= 4500 && wDone >= 3)) k = 'A'; else if (fun >= 2200 || wDone >= 3) k = 'B'; else k = 'C';
+    const R0 = RANKS.find(r => r.k === k), R = k === 'L' ? { ...R0, d: R0.d.replace('{who}', locals.loveStory()) } : R0; T.rank = `${R.n} (${R.k})`; persist(); G.closeUI(); G.parkCar();
+    const st = [['💵 Final cash', $$(cash)], ['⭐ Fun points', fun.toLocaleString()], ['📋 Wishes', `${wDone} / ${T.wishes.length}`], ['🫶 Bestie happiness', T.buddyMode && !T.bf ? (T.buddy && T.buddy.name ? `👥 ${T.buddy.name} · together ${social.togetherPct()}%` : '👥 no buddy paired') : solo ? 'Solo trip' : `${moodFace(mood)} ${Math.round(mood)}%`],
+      ['👔 Final fit', `${OUTFITS[T.wearing].n} · Style ${styleScore()} · Charm ${charm()}`], ['💼 Jobs worked', T.stats.jobs], ['📸 Photos sold', T.stats.photos], ['😵 Blackouts', T.stats.blackouts], ['🎰 Wins', T.stats.wins], ['💼 Wallet', T.quest.wallet >= 3 ? 'recovered' : 'lost forever'], ['🤝 Crew recruited', (T.crewEver || []).length], ['🌙 Nights with company', T.nights || 0]];
     const why = reason === 'greyhound' ? '🚌 You hit $0 twice. The Greyhound leaves in 5 minutes.' : reason === 'early' ? '✈️ Early checkout.' : '🛎️ Day 5 · 12:00 PM · checkout time.';
     recapCard.innerHTML = `<h2>🧾 Vegas Trip Checkout</h2><p class="fine">${why} ${TRIP_TYPES[T.type].icon} ${TRIP_TYPES[T.type].n} · ${BK().icon} ${BK().n}</p>
-      <div class="tRank r${k.replace('+', 'p')}"><b>${R.n}</b><span>${R.k}-Rank</span><small>${R.d}</small></div>
+      <div class="tRank r${k.replace('+', 'p')}"><b>${R.n}</b><span>${R.k === 'L' ? '♥' : R.k + '-Rank'}</span><small>${R.d}</small></div>
+      <p class="tScore">🏆 Trip score <b>${social.score().toLocaleString()}</b></p>
       <div class="tStats">${st.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('')}</div>
-      <div class="tBtns"><button class="gold" id="rcNew">✈️ Start a new trip</button><button id="rcRoam">🌴 Keep roaming</button><button class="ghost" id="rcFree">🎲 Free Play</button></div>`;
-    recapCard.querySelector('#rcNew').onclick = () => { G.closeUI(); showSetup(); };
+      <div class="tBtns"><button id="rcLb">🏆 Leaderboard</button><button class="gold" id="rcNew">✈️ Start a new trip</button><button id="rcRoam">🌴 Keep roaming</button><button class="ghost" id="rcFree">🎲 Free Play</button></div>`;
+    recapCard.querySelector('#rcNew').onclick = () => { G.closeUI(); showSetup(); }; recapCard.querySelector('#rcLb').onclick = () => social.board();
+    social.submit(k).then(r => { if (r && r.ok) G.toast('🏆 Trip score posted to the leaderboard'); });
     recapCard.querySelector('#rcRoam').onclick = () => { G.closeUI(); hudNow(); G.toast('🌴 The clock has stopped. Roam the Strip as long as you like.'); };
     recapCard.querySelector('#rcFree').onclick = () => { const u = new URL(location.href); u.searchParams.delete('mode'); location.href = u.pathname + u.search; };
     setTimeout(() => G.showUI('tripRecap'), 60); hudNow(); }
 
   // ---------------- per-frame ----------------
-  function near() { if (!running() || state.area.id !== 'strip' || state.driving) return null; const p = player.position;
+  function near() { if (!running() || state.driving) return null; const p = player.position; if (state.area.id !== 'strip') return locals ? locals.near() : null;
     if (Math.hypot(p.x - (SPOTS.cart.x - 1.9), p.z - SPOTS.cart.z) < 2.6) return { label: 'Taco & water cart · order 🌮', act: () => openVenue('cart') };
     if (T.quest.wallet === 2 && !T.quest.cold && Math.hypot(p.x - SPOTS.pickpocket.x, p.z - SPOTS.pickpocket.z) < 2.8) return { label: 'Confront the flamingo-jacket pickpocket 🦩', act: confront };
-    return null; }
+    return locals ? locals.near() : null; }
   function update(dt, t) {
     if (state.tripShow) { showT += dt; const k = Math.min(REVUE.length - 1, Math.floor(showT / 2.7)); $('tsCap').textContent = REVUE[k]; world.animDancers(t, k); if (showT > REVUE.length * 2.7 + 0.6) endShow(); return; }
     if (bestie) bestie.update(dt, t);
+    if (locals && T) locals.update(dt, t);
+    if (T) social.update(dt);
     if (!T) return;
     if (state.area.id !== lastArea) { lastArea = state.area.id; areaWarnings(lastArea); }
     if (!running()) { if ((hudT += dt) > 1) { hudT = 0; hudNow(); } return; }
@@ -365,6 +388,11 @@ export async function initTrip(G) {
   const firstBet = document.querySelector('.bet'); if (firstBet) firstBet.click();
   { const f = document.querySelector('#slots .fine'); if (f) f.textContent = f.textContent.replace(/·?\s*$/, '') + ' · bets in Trip Cash'; }
   G.C5.onShot = onShot;
+  let locals = null;
+  function callBestie(key) { if (!T || T.bestie) return; T.bestie = key; T.bf = { energy: 80, hunger: 50, buzz: 0, mood: 65, lost: null, wanderNight: 0, hypeAt: -999 }; bestie = createBestie(G, T, { text, fun: (n, why) => addFun(n, why, true), toast: G.toast }); G.toast(`${BESTIES[key].icon} ${BESTIES[key].n} is on the way! "Where's the party?"`); persist(); }
+  const social = createSocial(G, () => T, { addFun, toast: G.toast, text, dlg, rowItem, el, persist, running, day, wish, reopen: () => openHub() });
+  const makeLocals = () => createLocals(G, T, { dlg, rowItem, toast: G.toast, addFun, spend, text, charm, top, hour, day, jump, sleepAway, bestie: () => bestie, wish, persist, el });
+  G.room.interacts.push({ x: 2.6, z: 2.2, r: 2.2, when: () => !!locals && running() && locals.crew.length >= 2, label: 'Throw a suite party with your crew 🎉', act: () => suiteParty() });
   world = buildTripWorld(G, { onVenue: openVenue, onShower, onBed, onDJ, onRevue, onClue, quest: () => (T ? (T.quest.cold ? -1 : T.quest.wallet) : -1) });
 
   return {
@@ -372,8 +400,8 @@ export async function initTrip(G) {
       G.openCreator(); $('crTitle').textContent = 'Who\'s flying to Vegas?'; $('crDone').textContent = 'Next: plan the trip ✈️'; },
     afterCreator() { if (T && !T.ended) wear(T.wearing); showSetup(); },
     update, near, canEnter, camera, todTap() { if (T) G.toast(T.ended ? '🌴 The trip is over: time stands still.' : `🕐 Trip clock: Day ${day()} · ${clock()}. Change the pace with the ${speedLbl()} button.`); },
-    emit(k, d) { onCasino(k, d || {}); }, bets: [2, 5, 10, 25], brokeMsg: 'Not enough Trip Cash. Work a gig or sell some photos.', money,
+    emit(k, d) { onCasino(k, d || {}); }, presence: () => (T ? social.presence() : 0), get social() { return social; }, callBestie, bets: [2, 5, 10, 25], brokeMsg: 'Not enough Trip Cash. Work a gig or sell some photos.', money,
     // test hooks
-    get T() { return T; }, get bestie() { return bestie; }, get world() { return world; }, advance: m => advance(m), startNew, resume, endTrip, openHub, openVenue, openBoutique, openCheckIn, buy, wear, onBed, onShower, blackout, wish, styleScore, charm, startShow, onDJ, onRevue, workBar, onClue, confront, frontDesk, vip, poolCheck: () => poolCheck(),
+    get T() { return T; }, get bestie() { return bestie; }, get locals() { return locals; }, suiteParty, get world() { return world; }, advance: m => advance(m), startNew, resume, endTrip, openHub, openVenue, openBoutique, openCheckIn, buy, wear, onBed, onShower, blackout, wish, styleScore, charm, startShow, onDJ, onRevue, workBar, onClue, confront, frontDesk, vip, poolCheck: () => poolCheck(),
   };
 }

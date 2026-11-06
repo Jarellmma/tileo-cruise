@@ -13,6 +13,8 @@ const http = require('http');
 const { WebSocketServer } = require('./vendor/ws');
 const { createAccounts } = require('./accounts');
 const accounts = createAccounts();
+const { createTrips } = require('./trips');
+const trips = createTrips(); // v7.2: Vegas Trip leaderboards
 
 const PORT = Number(process.env.PORT) || 10000;
 const ORIGINS = (process.env.ALLOWED_ORIGINS || '*').split(',').map(s => s.trim()).filter(Boolean);
@@ -66,6 +68,7 @@ function joinRoom(c, party) {
 function countPlayers() { let n = 0; for (const r of rooms.values()) n += r.size; return n; }
 
 const server = http.createServer((req, res) => {
+  if (trips(req, res)) return;
   if (accounts(req, res)) return;
   if (req.url === '/health' || req.url === '/') {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
