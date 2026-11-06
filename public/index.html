@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex,nofollow">
 <title>TILEO KINGDOM · Strip Life</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🦁%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=1793979068">
-<script src="config.js?v=1793979068"></script>
+<link rel="stylesheet" href="style.css?v=1793986352">
+<script src="config.js?v=1793986352"></script>
 <script type="importmap">{"imports":{"three":"./lib/three.module.js","three/addons/":"./lib/jsm/"}}</script>
 </head>
 <body>
@@ -83,6 +83,10 @@
     <p>A flirty lifestyle-resort simulation on a stylized Las Vegas Strip. Mature themes, no nudity or explicit content.
       All casino games use free play coins only: no real-money gambling, no cash-out.</p>
     <p class="fine">Strip resorts in this game are fictional parody lookalikes and are not affiliated with any real resort or brand.</p>
+    <div id="gateModes" class="gateModes">
+      <button data-mode="free" class="gm on"><b>🎲 Free Play</b><small>Sandbox · 1,000 Kingdom Coins · no goals</small></button>
+      <button data-mode="trip" class="gm"><b>✈️ Epic or Fail: Vegas Trip</b><small>5-day story · lost wallet, lost luggage · survive Sin City</small></button>
+    </div>
     <div class="row">
       <button id="gateYes" class="gold">I'm 18 or older · Enter</button>
       <button id="gateNo" class="ghost">Leave</button>
@@ -108,9 +112,12 @@
       <div class="lbl">Hair style</div><div class="sw" id="swHairStyle"></div>
       <div class="lbl">Hair color</div><div class="sw" id="swHair"></div>
     </div>
+    <div id="outfitRows">
     <div class="lbl">Outfit color</div><div class="sw" id="swOutfit"></div>
     <div class="lbl">Outfit style <small>(buy more at Tiger Boutique)</small></div><div class="sw" id="swStyle"></div>
     <div id="cutRow"><div class="lbl">Classic cut</div><div class="sw" id="swCut"></div></div>
+    </div>
+    <p class="fine tripOnly">✈️ The airline lost your luggage: you arrive in your wrinkled plane clothes. Buy new fits at Tiger Boutique.</p>
     <button id="crDone" class="gold">Hit the Strip</button>
   </div>
 </div>
@@ -324,6 +331,6 @@
 </div>
 
 <div id="fade"><img id="fadeLion" src="assets/images/resort-logo.png" alt=""></div>
-<script type="module" src="main.js?v=1793979068"></script>
+<script type="module" src="main.js?v=1793986352"></script>
 </body>
 </html>

@@ -3,8 +3,8 @@
 // Filters: none / warm / B&W / neon. Watermark: DJ Tileo, resort logo, or off. The HUD hides while you shoot. Shutter flash + sound.
 // Save uses canvas.toBlob + navigator.share (files) with a download fallback. The gallery lives in IndexedDB (cap 24) with a localStorage fallback.
 import * as THREE from 'three';
-import { LOGOS } from './core.js?v=1793979068';
-import { rigBones } from './characters.js?v=1793979068';
+import { LOGOS } from './core.js?v=1793986352';
+import { rigBones } from './characters.js?v=1793986352';
 
 export const FILTERS = {
   none: { n: 'None', css: '' },
@@ -101,7 +101,7 @@ export function initPhoto(C) {
     const u = Math.max(w, h) / 1000; if (st.mark !== 'off') { const im = logoImg[st.mark]; if (im.complete && im.naturalWidth) { const lh = h * 0.15, lw = lh * im.naturalWidth / im.naturalHeight; x.save(); x.shadowColor = 'rgba(0,0,0,.6)'; x.shadowBlur = 10 * u; x.globalAlpha = 0.92; x.drawImage(im, w - lw - 18 * u, h - lh - 16 * u, lw, lh); x.restore(); } }
     x.save(); x.font = `600 ${Math.round(15 * u)}px system-ui,sans-serif`; x.fillStyle = 'rgba(255,214,120,.95)'; x.shadowColor = 'rgba(0,0,0,.7)'; x.shadowBlur = 6 * u; x.textBaseline = 'bottom';
     x.fillText(`TILEO KINGDOM · ${place()}`, 18 * u, h - 16 * u); x.restore();
-    flash(); shutterSound();
+    flash(); shutterSound(); if (C.onShot) C.onShot(place(), st.mode); // v7: Vegas Trip photo gigs
     out.toBlob(async blob => { st.busy = false; if (!blob) return C.toast('📸 Could not capture the photo on this device.'); st.last = blob; st.shots++;
       const rec = { t: Date.now(), place: place(), filter: st.filter, mode: st.mode, blob }; const n = await store.add(rec); st.count = n; refreshThumb(); C.toast(`📸 Saved to your Gallery (${n}/${store.mode === 'ls' ? LS_CAP : CAP})`); }, 'image/jpeg', 0.9); }
   function flash() { const f = $('photoFlash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go'); }

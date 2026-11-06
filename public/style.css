@@ -287,3 +287,11 @@ button.link{background:none;color:#ffcf4a;text-decoration:underline;padding:2px 
   #creator .card h2 { margin: 0 0 8px; font-size: 16px; }
   #crDone { position: sticky; bottom: 0; margin-top: 10px; box-shadow: 0 -10px 18px #0b0805; }
 }
+
+/* v7: mode picker on the 18+ gate (Free Play is the default) */
+.gateModes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 4px}
+.gateModes .gm{display:flex;flex-direction:column;gap:3px;text-align:left;background:#0009;color:#f3e6c4;border:1px solid #c9932e66;padding:10px 12px;line-height:1.25}
+.gateModes .gm b{font-size:14px;color:#ffd77a}.gateModes .gm small{font-size:11.5px;opacity:.8}
+.gateModes .gm.on{border-color:#ffd77a;background:linear-gradient(160deg,#3a2810,#120c05);box-shadow:0 0 14px #c9932e66,inset 0 0 0 1px #ffd77a}
+@media (max-width:420px){.gateModes{grid-template-columns:1fr}}
+.tripOnly{display:none}body.tripMode .tripOnly{display:block}body.tripMode #outfitRows{display:none}

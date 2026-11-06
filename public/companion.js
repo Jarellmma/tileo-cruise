@@ -2,7 +2,7 @@
 // Your guest follows you between places, rides in the convertible's passenger seat and on the limo's J-seat,
 // dances when you dance, and goes back to what they were doing when you say goodbye.
 import * as THREE from 'three';
-import { CHAR, makeCharacter, animate } from './characters.js?v=1793979068';
+import { CHAR, makeCharacter, animate, applyLook } from './characters.js?v=1793986352';
 
 const NAMES = { f: ['Mia', 'Jasmine', 'Sofia', 'Aaliyah', 'Chloe', 'Nia', 'Valentina', 'Zoe', 'Imani', 'Lena', 'Brianna', 'Camila'],
   m: ['Marcus', 'Diego', 'Andre', 'Liam', 'Malik', 'Jalen', 'Rafael', 'Noah', 'Darius', 'Leo', 'Isaiah', 'Mateo'] };
@@ -35,7 +35,7 @@ export function initCompanion(G) {
     C = { ch: c, orig: ch, name: L.name, area: state.area.id, seat: '', look: L };
     G.toast(`🥂 ${L.name} is hanging out with you. They'll follow you, ride in your car and join you in the limo.`);
   }
-  function dismiss() { if (!C) return; const { ch, orig, name } = C; ch.removeFromParent(); const i = CHAR.list.indexOf(ch); if (i >= 0) CHAR.list.splice(i, 1);
+  function dismiss() { if (!C || C.fixed) return; const { ch, orig, name } = C; ch.removeFromParent(); const i = CHAR.list.indexOf(ch); if (i >= 0) CHAR.list.splice(i, 1);
     orig.visible = true; orig.userData.invited = false; C = null; G.toast(`👋 ${name} heads back to the party.`); }
 
   // behind you and a little to the right
@@ -43,6 +43,7 @@ export function initCompanion(G) {
   function update(dt, t) {
     scanT -= dt; if (scanT <= 0) { scanT = 0.25; scan(); }
     if (!C) return; const c = C.ch; c.updateMatrixWorld(); // keeps its distance-based detail (and the rigged, seated pose) current
+    if (C.hold) { const H = C.hold; c.visible = !state.cine && state.area.id === H.area; c.position.set(H.x, H.y || 0, H.z); c.rotation.y = H.ry || 0; if (c.visible) animate(c, t, 0, H.mode || ''); C.seat = 'held'; return; } // v7: the Vegas Trip bestie wandered off and waits somewhere
     if (state.cine || state.ride) { c.visible = false; C.seat = 'away'; return; } // Sky Needle elevator / riding with another player: they wait
     c.visible = true;
     if (state.driving) { const car = G.car; v.copy(PASS); car.localToWorld(v); c.position.copy(v); c.rotation.y = car.rotation.y; C.seat = 'car'; animate(c, t, 0, 'drive'); return; }
@@ -51,17 +52,27 @@ export function initCompanion(G) {
     if (C.seat || C.area !== state.area.id) { if (C.seat !== 'car') { followPoint(w); c.position.copy(w); } C.area = state.area.id; C.seat = ''; }
     followPoint(w); const dx = w.x - c.position.x, dz = w.z - c.position.z, d = Math.hypot(dx, dz);
     if (d > 30) { c.position.copy(w); animate(c, t, 0, ''); return; }
-    c.position.y = player.position.y;
+    if (C.depth) { const wd = C.depth(c.position), fy = state.area.floorY || 0; c.position.y = wd > 0.05 ? fy - wd : fy + (state.area.id === 'strip' && Math.abs(c.position.x) > 14 && Math.abs(c.position.x) < 22 ? 0.15 : 0); }
+    else c.position.y = player.position.y;
     if (d > 0.5) { const sp = Math.min(12, d * 2.2 + 1.5), k = Math.min(1, sp * dt / d); c.position.x += dx * k; c.position.z += dz * k;
       const ty = Math.atan2(dx, dz); c.rotation.y += wrap(ty - c.rotation.y) * Math.min(1, dt * 10); animate(c, t, sp, ''); }
-    else { c.rotation.y += wrap(player.rotation.y - c.rotation.y) * Math.min(1, dt * 4); animate(c, t, 0, state.emote === 'dance' ? 'dance' : state.emote === 'wave' ? 'wave' : ''); }
+    else { c.rotation.y += wrap(player.rotation.y - c.rotation.y) * Math.min(1, dt * 4); const wd = C.depth ? C.depth(c.position) : 0;
+      animate(c, t, 0, C.depth && wd >= 0.8 ? 'swim' : C.depth && wd >= 0.5 && state.pmode === 'sit' ? 'sit' : state.emote === 'dance' ? 'dance' : state.emote === 'wave' ? 'wave' : C.mood || ''); }
   }
   const wrap = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
   // interaction offered by main.js's nearest()
   function action() {
+    if (C && C.fixed) return null;
     if (C && !state.driving && !state.limo && C.ch.visible && Math.hypot(C.ch.position.x - player.position.x, C.ch.position.z - player.position.z) < 1.8) return { label: `Say goodbye to ${C.name}`, act: dismiss };
     if (cand && !C) { const L = cand.userData.look || {}; return { label: `Invite ${guestName(L)} to hang out 🥂`, act: () => invite(cand) }; }
     return null;
   }
-  return { update, action, dismiss, get active() { return C; }, get inCar() { return !!C && state.driving; }, get inLimo() { return !!C && !!state.limo; } };
+  // v7 (Vegas Trip): a fixed companion (the trip's bestie) who is never dismissed; depth(p) lets them wade and swim in the pools
+  function adopt(look, opts = {}) { if (C && !C.fixed) dismiss(); if (C) release();
+    const c = makeCharacter(look); c.userData.companion = true; c.userData.noInvite = true; G.scene.add(c); followPoint(w); c.position.copy(w); c.rotation.y = player.rotation.y;
+    C = { ch: c, orig: null, name: look.name, area: state.area ? state.area.id : 'strip', seat: '', look: { ...look }, fixed: true, hold: null, depth: opts.depth || null, mood: '' }; return C; }
+  function release() { if (!C) return; const c = C.ch; c.removeFromParent(); const i = CHAR.list.indexOf(c); if (i >= 0) CHAR.list.splice(i, 1); if (C.orig) { C.orig.visible = true; C.orig.userData.invited = false; } C = null; }
+  function setLook(look) { if (!C) return; C.look = { ...look }; applyLook(C.ch, look); }
+  function hold(h) { if (!C) return; C.hold = h || null; if (!h) { followPoint(w); C.ch.position.copy(w); C.area = state.area.id; } }
+  return { update, action, dismiss, adopt, release, setLook, hold, get active() { return C; }, get inCar() { return !!C && state.driving; }, get inLimo() { return !!C && !!state.limo; } };
 }

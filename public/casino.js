@@ -44,10 +44,10 @@ export function initCasino(C) { // C: { save, setCoins, showUI, closeUI, toast, 
     const live = hand && !hand.done; $('bjDeal').disabled = !!live; $('bjHit').disabled = $('bjStand').disabled = !live; $('bjDouble').disabled = !live || hand.p.length !== 2 || C.save.coins < hand.bet;
     $('bjBets').querySelectorAll('button').forEach(b => b.disabled = !!live);
   }
-  function settle(msg, ret) { hand.done = true; if (ret) C.setCoins(C.save.coins + ret); $('bjMsg').textContent = msg + ` · Balance ${C.save.coins.toLocaleString()}`; renderBJ(true); C.chime(ret > hand.bet * 2 ? 'big' : ret > hand.bet ? 'win' : 'spin'); }
+  function settle(msg, ret) { hand.done = true; if (ret) C.setCoins(C.save.coins + ret); if (C.onEvent) C.onEvent('bj', { bet: hand.bet, ret }); $('bjMsg').textContent = msg + ` · Balance ${C.save.coins.toLocaleString()}`; renderBJ(true); C.chime(ret > hand.bet * 2 ? 'big' : ret > hand.bet ? 'win' : 'spin'); }
   function dealerPlay() { while (val(hand.d) < 17) hand.d.push(draw()); const p = val(hand.p), d = val(hand.d);
     if (d > 21) settle(`Dealer busts with ${d}. You win ${hand.bet}!`, hand.bet * 2); else if (p > d) settle(`${p} beats ${d}. You win ${hand.bet}!`, hand.bet * 2); else if (p === d) settle(`Push at ${p}. Bet returned.`, hand.bet); else settle(`Dealer has ${d}. You lose ${hand.bet}.`, 0); }
-  $('bjDeal').onclick = () => { if (hand && !hand.done) return; if (C.save.coins < bjBet) { $('bjMsg').textContent = 'Not enough coins: try the Coin Cage daily bonus.'; return; }
+  $('bjDeal').onclick = () => { if (hand && !hand.done) return; if (C.save.coins < bjBet) { $('bjMsg').textContent = (C.broke || 'Not enough coins: try the Coin Cage daily bonus.'); return; }
     C.setCoins(C.save.coins - bjBet); hand = { bet: bjBet, p: [draw(), draw()], d: [draw(), draw()], done: false }; C.chime('spin');
     const pb = val(hand.p) === 21, db = val(hand.d) === 21;
     if (pb || db) { if (pb && db) settle('Both have blackjack. Push.', hand.bet); else if (pb) settle(`BLACKJACK! You win ${Math.round(hand.bet * 1.5)}.`, Math.round(hand.bet * 2.5)); else settle('Dealer blackjack. You lose.', 0); return; }
@@ -56,18 +56,19 @@ export function initCasino(C) { // C: { save, setCoins, showUI, closeUI, toast, 
   $('bjStand').onclick = () => { if (!hand || hand.done) return; dealerPlay(); };
   $('bjDouble').onclick = () => { if (!hand || hand.done || hand.p.length !== 2 || C.save.coins < hand.bet) return; C.setCoins(C.save.coins - hand.bet); hand.bet *= 2; hand.p.push(draw());
     const v = val(hand.p); if (v > 21) settle(`Bust with ${v} after doubling. You lose ${hand.bet}.`, 0); else dealerPlay(); };
-  chips($('bjBets'), [10, 50, 100, 250], v => bjBet = v, 10);
+  const BETS = C.bets || [10, 50, 100, 250]; bjBet = BETS[0]; // v7: the Vegas Trip passes smaller Trip Cash chips
+  chips($('bjBets'), BETS, v => bjBet = v, BETS[0]);
 
   // ---------------- roulette ----------------
   const TYPES = [['red', 'Red', 2], ['black', 'Black', 2], ['odd', 'Odd', 2], ['even', 'Even', 2], ['low', '1–18', 2], ['high', '19–36', 2], ['d1', '1st 12', 3], ['d2', '2nd 12', 3], ['d3', '3rd 12', 3], ['num', 'Number', 36]];
   let rlType = 'red', rlBet = 10, rlBusy = false; const hist = [];
   const tbox = $('rlTypes'); for (const [k, n] of TYPES) { const b = el('button', { class: 'rlT' + (k === rlType ? ' on' : ''), 'data-k': k }, n); b.onclick = () => { if (rlBusy) return; rlType = k; tbox.querySelectorAll('.rlT').forEach(x => x.classList.toggle('on', x === b)); $('rlNumber').closest('.rlNum').style.opacity = k === 'num' ? 1 : 0.45; }; tbox.appendChild(b); }
   $('rlNumber').closest('.rlNum').style.opacity = 0.45;
-  chips($('rlBets'), [10, 50, 100, 250], v => rlBet = v, 10);
+  rlBet = (C.bets || [10])[0]; chips($('rlBets'), C.bets || [10, 50, 100, 250], v => rlBet = v, rlBet);
   const colorOf = n => n === 0 ? 'green' : REDS.has(n) ? 'red' : 'black';
   const wins = (k, n, pick) => { if (k === 'num') return n === pick; if (n === 0) return false; return k === 'red' ? REDS.has(n) : k === 'black' ? !REDS.has(n) : k === 'odd' ? n % 2 === 1 : k === 'even' ? n % 2 === 0 : k === 'low' ? n <= 18 : k === 'high' ? n >= 19 : k === 'd1' ? n <= 12 : k === 'd2' ? n > 12 && n <= 24 : n > 24; };
   $('rlSpin').onclick = () => { if (rlBusy) return; const pick = Math.max(0, Math.min(36, Math.round(+$('rlNumber').value || 0)));
-    if (C.save.coins < rlBet) { $('rlMsg').textContent = 'Not enough coins: try the Coin Cage daily bonus.'; return; }
+    if (C.save.coins < rlBet) { $('rlMsg').textContent = (C.broke || 'Not enough coins: try the Coin Cage daily bonus.'); return; }
     C.setCoins(C.save.coins - rlBet); rlBusy = true; $('rlSpin').disabled = true; C.onSpin && C.onSpin(true);
     const n = Math.floor(Math.random() * 37), ball = $('rlBall'); let k = 0; const label = TYPES.find(x => x[0] === rlType)[1] + (rlType === 'num' ? ' ' + pick : '');
     $('rlMsg').textContent = `${rlBet} on ${label}… no more bets.`;
@@ -75,7 +76,7 @@ export function initCasino(C) { // C: { save, setCoins, showUI, closeUI, toast, 
     const finish = () => { ball.textContent = n; ball.className = 'rlBall ' + colorOf(n) + ' land'; hist.unshift(n); hist.length = Math.min(hist.length, 10);
       $('rlHist').innerHTML = hist.map(h => `<i class="${colorOf(h)}">${h}</i>`).join('');
       const pay = TYPES.find(x => x[0] === rlType)[2], won = wins(rlType, n, pick);
-      if (won) { C.setCoins(C.save.coins + rlBet * pay); C.chime(pay > 3 ? 'big' : 'win'); }
+      if (won) { C.setCoins(C.save.coins + rlBet * pay); C.chime(pay > 3 ? 'big' : 'win'); } if (C.onEvent) C.onEvent('rl', { bet: rlBet, won, pay });
       $('rlMsg').textContent = `${n} ${colorOf(n)}. ` + (won ? `You win ${rlBet * (pay - 1)}!` : `No win on ${label}.`) + ` · Balance ${C.save.coins.toLocaleString()}`;
       rlBusy = false; $('rlSpin').disabled = false; C.onSpin && C.onSpin(false); };
     tick(); };

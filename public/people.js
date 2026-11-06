@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { PEOPLE_BASES } from './people_data.js?v=1793979068';
+import { PEOPLE_BASES } from './people_data.js?v=1793986352';
 
 export const PEOPLE_DIR = 'assets/people/';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -237,7 +237,8 @@ export class RealBody {
     this.rows = rows; this.rowOf = new Map(rows.map(r => [r.db, r]));
     this.pelvis = byName.Pelvis; this.pelvisParentInv = new THREE.Matrix4().copy(this.holder.matrixWorld).invert().multiply(this.pelvis.parent.matrixWorld).invert();
     this.hipRatio = 1; this.bindM = {};
-    for (const n of ['Head', 'L_Forearm']) this.bindM[n] = new THREE.Matrix4().copy(hm).multiply(byName[n].matrixWorld);
+    for (const n of ['Head', 'L_Forearm', 'Spine2', 'L_Foot', 'R_Foot']) if (byName[n]) this.bindM[n] = new THREE.Matrix4().copy(hm).multiply(byName[n].matrixWorld);
+    this.accP = { neck: byName.Neck ? dp(byName.Neck) : null, lf: byName.L_Foot ? dp(byName.L_Foot) : null, lt: byName.L_Toe0 ? dp(byName.L_Toe0) : null, rf: byName.R_Foot ? dp(byName.R_Foot) : null, rt: byName.R_Toe0 ? dp(byName.R_Toe0) : null }; this.accObjs = []; this.accKey = '';
     // head measurements (glasses), wrist socket (wristband)
     this.measureHead(); this.handA = dp(byName.L_Forearm); this.handB = dp(byName.L_Hand);
     this.band = null;
@@ -274,6 +275,26 @@ export class RealBody {
     // eye positions were measured in world space at construction (holder at the origin), i.e. holder space
     const mid = H.eyeL.clone().add(H.eyeR).multiplyScalar(0.5), ipd = H.eyeL.distanceTo(H.eyeR);
     this.glassObj = this.attach(this.byName.Head, makeGlasses(kind), new THREE.Vector3(mid.x, mid.y + 0.001, Math.max(mid.z + 0.022, H.front - 0.012)), new THREE.Quaternion(), ipd / 6.5);
+  }
+  // v7 (Vegas Trip) statement accessories: 'cap' (DJ Tileo VIP snapback), 'chain' (heavy Cuban lion chain), 'kicks' (gold-trim sneakers)
+  setAcc(list) {
+    const key = (list || '').split(/[+,]/).filter(Boolean).sort().join('+'); if (key === this.accKey) return; this.accKey = key;
+    for (const o of this.accObjs) o.parent && o.parent.remove(o); this.accObjs = []; if (!key) return;
+    const H = this.headInfo, P = this.accP, gold = new THREE.MeshStandardMaterial({ color: 0xffcf5a, metalness: 0.7, roughness: 0.32, emissive: 0x4a3200, emissiveIntensity: 0.6 }), has = k => key.split('+').includes(k);
+    if (has('cap') && H) { const g = new THREE.Group(), ipd = H.eyeL && H.eyeR ? H.eyeL.distanceTo(H.eyeR) : 0.064, r = Math.max(ipd * 1.7, Math.min(H.w * 0.6, ipd * 2.2)), mid = H.eyeL && H.eyeR ? H.eyeL.clone().add(H.eyeR).multiplyScalar(0.5) : new THREE.Vector3(H.cx, H.eyeY, H.front - 0.02), cz = mid.z - ipd * 1.15; // sits on top of the hair (the realistic hair rises above the skull)
+      const black = new THREE.MeshStandardMaterial({ color: 0x1c1c22, roughness: 0.85 }), under = new THREE.MeshStandardMaterial({ color: 0x3a2a12, roughness: 0.9 });
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), black); dome.scale.set(1, 0.74, 1.12); g.add(dome); const band = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.01, 0.03, 20, 1, true), black); band.position.y = -0.014; band.scale.z = 1.12; g.add(band);
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.98, r * 0.98, 0.009, 20, 1, false, -Math.PI * 0.4, Math.PI * 0.8), [black, black, under]); brim.position.set(0, -0.026, r * 0.5); brim.scale.set(1, 1, 1.45); brim.rotation.x = 0.1; g.add(brim);
+      const edge = new THREE.Mesh(new THREE.TorusGeometry(r * 0.98, 0.0035, 4, 20, Math.PI * 0.8), gold); edge.rotation.set(Math.PI / 2, 0, Math.PI * 0.1); edge.position.copy(brim.position); edge.scale.set(1, 1.45, 1); g.add(edge);
+      const badge = new THREE.Mesh(new THREE.CircleGeometry(r * 0.26, 16), gold); badge.position.set(0, r * 0.3, r * 1.08); badge.rotation.x = -0.32; g.add(badge);
+      const btn = new THREE.Mesh(new THREE.SphereGeometry(r * 0.09, 8, 6), gold); btn.position.y = r * 0.74; g.add(btn);
+      this.accObjs.push(this.attach(this.byName.Head, g, new THREE.Vector3(mid.x, Math.max(mid.y + ipd * 0.85, H.top + 0.025 - r * 0.74), cz), new THREE.Quaternion(), 1)); }
+    if (has('chain') && P.neck && this.bindM.Spine2) { const t = new THREE.Mesh(new THREE.TorusGeometry(0.086, 0.0095, 6, 28), gold); const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2 - 0.85, 0, 0));
+      const pend = new THREE.Mesh(new THREE.OctahedronGeometry(0.018), gold); pend.position.set(0, 0.088, -0.01); t.add(pend);
+      this.accObjs.push(this.attach(this.byName.Spine2, t, new THREE.Vector3(P.neck.x, P.neck.y - 0.02, P.neck.z + 0.022), q, 1)); }
+    if (has('kicks')) for (const [f, to, bn] of [[P.lf, P.lt, 'L_Foot'], [P.rf, P.rt, 'R_Foot']]) { if (!f || !to || !this.bindM[bn]) continue;
+      const len = Math.hypot(to.x - f.x, to.z - f.z) + 0.11, m = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, len), gold), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.atan2(to.x - f.x, to.z - f.z), 0));
+      this.accObjs.push(this.attach(this.byName[bn], m, new THREE.Vector3((f.x + to.x) / 2, 0.018, (f.z + to.z) / 2 - 0.01), q, 1)); }
   }
   setBand(color) {
     if (!this.band) { const B = this.byName, a = this.handA.clone(), b = this.handB.clone();

@@ -3,11 +3,11 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { G, M, add, box, cyl, T, PI, glow, logoPlane } from './core.js?v=1793979068';
-import { Q } from './quality.js?v=1793979068';
-import { realLook, buildRealBody, retexture, srcBind, setTigerSource, warmPeople, FACES as RFACES, BODIES } from './people.js?v=1793979068';
-import { PEOPLE_BASES } from './people_data.js?v=1793979068';
-import { carParts, carMats } from './cars.js?v=1793979068';
+import { G, M, add, box, cyl, T, PI, glow, logoPlane } from './core.js?v=1793986352';
+import { Q } from './quality.js?v=1793986352';
+import { realLook, buildRealBody, retexture, srcBind, setTigerSource, warmPeople, FACES as RFACES, BODIES } from './people.js?v=1793986352';
+import { PEOPLE_BASES } from './people_data.js?v=1793986352';
+import { carParts, carMats } from './cars.js?v=1793986352';
 
 export const BAND_C = '#e0b24a'; // the TILEO KINGDOM guest wristband (gold); guests get one at check-in
 export const STYLES = {
@@ -411,13 +411,13 @@ function wantReal(ch, u, lod) {
 function realOpts(u) { const hi = Q.key === 'high'; return u.important ? { size: Q.key === 'low' ? 512 : 1024, normals: Q.key !== 'low', hideHead: !!u.hideRealHead, smile: 0.55 } : { size: 512, normals: hi, smile: 0.35 + Math.random() * 0.4 }; }
 function ensureReal(ch) {
   const u = ch.userData, r = u.rig; if (!r) return; const L = realLook({ ...u.look, body: r.sex });
-  if (u.real && u.real.base === L.b) { const R = u.real; R.L = L; if (R.rb) { retexture(R.rb, L, realOpts(u)).catch(() => {}); if ((R.rb.L.g || '') !== (L.g || '')) R.rb.setGlasses(L.g); R.rb.L = L; R.rb.setBand(u.look.banded ? BAND_C : null); r.lod_ = -1; } return; }
+  if (u.real && u.real.base === L.b) { const R = u.real; R.L = L; if (R.rb) { retexture(R.rb, L, realOpts(u)).catch(() => {}); if ((R.rb.L.g || '') !== (L.g || '')) R.rb.setGlasses(L.g); R.rb.L = L; R.rb.setBand(u.look.banded ? BAND_C : null); R.rb.setAcc(u.look.acc || ''); r.lod_ = -1; } return; }
   if (u.real) dropReal(ch);
   const R = u.real = { base: L.b, rb: null, loading: true, L };
   buildRealBody(r, L, realOpts(u)).then(rb => {
     if (u.real !== R || u.rig !== r) { rb.dispose(); return; }
     R.rb = rb; R.loading = false; rb.holder.visible = false; ch.add(rb.holder);
-    rb.setBand(u.look.banded ? BAND_C : null);
+    rb.setBand(u.look.banded ? BAND_C : null); rb.setAcc(u.look.acc || '');
     if (u.onReal) u.onReal(rb);
     if (JSON.stringify(R.L) !== JSON.stringify(L)) ensureReal(ch);
     r.lod_ = -1;

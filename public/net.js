@@ -3,7 +3,7 @@
 // Accounts are shared with TILEO Cruise Lines (same username and password); each game keeps its own saved profile.
 // Public Strips (strangers) only allow the preset chat phrases (also enforced on the server); private parties chat freely.
 import * as THREE from 'three';
-import { makeCharacter, applyLook, animate, disposeCharacter, makeCar, BAND_C, STYLES, HAIRSTYLES, EMOTES, FACES } from './characters.js?v=1793979068';
+import { makeCharacter, applyLook, animate, disposeCharacter, makeCar, BAND_C, STYLES, HAIRSTYLES, EMOTES, FACES } from './characters.js?v=1793986352';
 
 export const QUICK_SAYS = ['Hi!', 'Follow me!', 'Meet me at the pool', 'Club tonight?', 'Nice outfit!', 'Race you down the Strip', 'Lucky streak!', 'Want a limo ride?', 'Good game!', 'Bye!'];
 const AREA_LABEL = { strip: 'On the Strip', lobby: 'Lobby & Casino', pool: 'Pool Deck', rooms: 'Suites floor', room: 'In their suite', club: 'Mega Club', needle: 'Sky Needle deck' };
