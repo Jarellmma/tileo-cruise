@@ -2,7 +2,7 @@
 // Your guest follows you between places, rides in the convertible's passenger seat and on the limo's J-seat,
 // dances when you dance, and goes back to what they were doing when you say goodbye.
 import * as THREE from 'three';
-import { CHAR, makeCharacter, animate, applyLook } from './characters.js?v=1793986352';
+import { CHAR, makeCharacter, animate, applyLook } from './characters.js?v=1793987979';
 
 const NAMES = { f: ['Mia', 'Jasmine', 'Sofia', 'Aaliyah', 'Chloe', 'Nia', 'Valentina', 'Zoe', 'Imani', 'Lena', 'Brianna', 'Camila'],
   m: ['Marcus', 'Diego', 'Andre', 'Liam', 'Malik', 'Jalen', 'Rafael', 'Noah', 'Darius', 'Leo', 'Isaiah', 'Mateo'] };

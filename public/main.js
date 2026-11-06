@@ -1,20 +1,21 @@
 // TILEO KINGDOM: Strip Life, playable prototype (Three.js, no build step)
 import * as THREE from 'three';
-import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793986352';
-import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793986352';
-import { createGfx, LOOK } from './gfx.js?v=1793986352';
-import { createAmbience } from './ambience.js?v=1793986352';
-import { initCasino } from './casino.js?v=1793986352';
-import { initNet } from './net.js?v=1793986352';
-import { initCompanion } from './companion.js?v=1793986352';
-import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793986352';
-import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793986352';
-import { PEOPLE_BASES } from './people_data.js?v=1793986352';
-import { buildStrip, updateWaters } from './world.js?v=1793986352';
-import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793986352';
-import { buildLimo } from './limo.js?v=1793986352';
-import { initPhoto } from './photo.js?v=1793986352';
-import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793986352';
+import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793987979';
+import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793987979';
+import { createGfx, LOOK } from './gfx.js?v=1793987979';
+import { createAmbience } from './ambience.js?v=1793987979';
+import { createMusic, SONGS, LISTS, STATIONS, station } from './music.js?v=1793987979';
+import { initCasino } from './casino.js?v=1793987979';
+import { initNet } from './net.js?v=1793987979';
+import { initCompanion } from './companion.js?v=1793987979';
+import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793987979';
+import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793987979';
+import { PEOPLE_BASES } from './people_data.js?v=1793987979';
+import { buildStrip, updateWaters } from './world.js?v=1793987979';
+import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793987979';
+import { buildLimo } from './limo.js?v=1793987979';
+import { initPhoto } from './photo.js?v=1793987979';
+import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793987979';
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window; if (isTouch) document.body.classList.add('touch');
@@ -56,7 +57,11 @@ const strip = defArea('strip', { label: 'Las Vegas Strip', outdoor: true, envI: 
 const lobby = defArea('lobby', { label: 'Tileo Kingdom · Lobby & Casino', envI: 0.6, hemi: 0.55, bloom: { day: [0.45, 0.4, 0.9], sunset: [0.45, 0.4, 0.9], night: [0.55, 0.45, 0.85] }, rects: [[-19.5, 19.5, -24.5, 24.5], [20.5, 69.5, -24.5, 24.5], [19, 21, -10.5, 10.5]], ceiling: 11.5, bbox: [-19.6, 69.6, -24.6, 24.6], music: 'lobby' }); buildLobby(lobby, ctx);
 const pool = defArea('pool', { label: 'Pool Deck · Rooftop', outdoor: true, envI: 1.1, rects: [[-59.5, 59.5, -49.5, 49.5]], music: 'pool' }); buildPool(pool, ctx);
 const rooms = defArea('rooms', { label: 'Floor 24 · Suites', envI: 0.5, hemi: 1.1, bloom: { day: [0.3, 0.4, 0.95], sunset: [0.3, 0.4, 0.95], night: [0.3, 0.4, 0.95] }, rects: [[-3.5, 3.5, -41.5, 7.5]], ceiling: 4.7, bbox: [-3.6, 3.6, -41.6, 7.6], music: 'lobby' }); buildRooms(rooms, ctx);
-const room = defArea('room', { label: 'Your Suite', envI: 0.5, hemi: 1.1, bloom: { day: [0.3, 0.4, 0.95], sunset: [0.3, 0.4, 0.95], night: [0.3, 0.4, 0.95] }, rects: [[-7.5, 7.5, -9.5, 9.5]], ceiling: 4.7, bbox: [-7.6, 7.6, -9.6, 9.6], music: 'lobby', vol: 0.35 }); buildRoom(room, ctx);
+const room = defArea('room', { label: 'Your Suite', envI: 0.5, hemi: 1.1, bloom: { day: [0.3, 0.4, 0.95], sunset: [0.3, 0.4, 0.95], night: [0.3, 0.4, 0.95] }, rects: [[-7.5, 7.5, -9.5, 9.5]], ceiling: 4.7, bbox: [-7.6, 7.6, -9.6, 9.6], music: 'suite', vol: 0.4 }); buildRoom(room, ctx);
+{ // v7.1: suite speaker by the bed: Suite Chill playlist or any radio station
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.3, 0.55), new THREE.MeshStandardMaterial({ color: 0x0e0d0c, roughness: 0.35 })); m.position.set(-7.35, 0.65, -2.6); room.group.add(m);
+  const gr = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.95), new THREE.MeshStandardMaterial({ color: 0x1a1410, emissive: 0xffb347, emissiveIntensity: 0.22, roughness: 0.8 })); gr.position.set(-6.995, 0.72, -2.6); gr.rotation.y = PI / 2; room.group.add(gr);
+  room.aabbs.push([-7.8, -6.9, -2.95, -2.25]); room.interacts.push({ x: -6.25, z: -2.6, r: 1.4, label: 'Suite speaker · change the music 🔊', act: () => openMusic() }); }
 const club = defArea('club', { label: 'Mega Club · DJ Tileo', envI: 0.15, hemi: 0.25, bloom: { day: [0.75, 0.5, 0.8], sunset: [0.75, 0.5, 0.8], night: [0.75, 0.5, 0.8] }, rects: [[-29.5, 29.5, -29.5, 29.5]], ceiling: 13.5, bbox: [-29.6, 29.6, -29.6, 29.6], music: 'club' }); buildClub(club, ctx);
 const FLOORS = [['lobby', 'L · Lobby & Casino'], ['pool', 'P · Pool Deck (rooftop)'], ['rooms', '24 · Suites'], ['club', 'C · Mega Club']];
 
@@ -67,7 +72,7 @@ const state = { area: null, driving: false, emote: null, sprint: false, vy: 0, j
 const cam = { yaw: -PI / 2, pitch: 0.28, dist: 7, follow: true };
 // ---------- v5: Sky Needle deck (an area that reuses the Strip geometry at 238 m), stretch limo, photo mode ----------
 const C5 = { $, state, player, cam, camera, scene, save, prefs, savePrefs, CHAR, areas, renderer, toast, setCoins, transition, enterArea, showUI, closeUI, drink, setMusic, syncButtons, parkCar, toggleWheel, onShot: null };
-const needleA = defArea('needle', { label: 'Sky Needle · Observation Deck · 238 m', outdoor: true, envI: 1, rects: [], showStrip: true, floorY: 238, farMul: 1.5, bloom: { day: [0.14, 0.35, 1.6], sunset: [0.45, 0.42, 0.95], night: [0.55, 0.42, 0.92] }, music: 'lobby', vol: 0.4,
+const needleA = defArea('needle', { label: 'Sky Needle · Observation Deck · 238 m', outdoor: true, envI: 1, rects: [], showStrip: true, floorY: 238, farMul: 1.5, bloom: { day: [0.14, 0.35, 1.6], sunset: [0.45, 0.42, 0.95], night: [0.55, 0.42, 0.92] }, music: 'needle', vol: 0.45,
   fog: { day: [700, 3600], sunset: [600, 3200], night: [520, 3000] } });
 const needle = buildNeedle(strip, needleA, C5);
 const limo = buildLimo(strip, C5);
@@ -110,16 +115,42 @@ function renderQualityUI() { const box = $('qualBtns'); if (!box) return; box.in
     b.onclick = () => { prefs.people = v; savePrefs(); setPeople(v); renderQualityUI(); if (state.ui === 'creator') buildCreator(state.wardrobe); }; pb.appendChild(b); } } }
 
 // ---------- music ----------
-const tracks = {}; for (const k of ['lobby', 'pool', 'club']) { const a = new Audio(`assets/audio/${k}.mp3`); a.loop = true; a.preload = 'none'; a.volume = 0; tracks[k] = a; }
+// v7.1: rotating playlists per venue + radio stations (music.js) instead of one looping song per place
+const music = createMusic({ onNow: (d, why) => nowPlaying(d, why) });
 let curTrack = null; const amb = createAmbience(); amb.setVolumes(prefs.vol);
 // Settings → Sound: three sliders, saved with the other preferences
 for (const [id, k] of [['volMusic', 'music'], ['volAmb', 'amb'], ['volFx', 'fx']]) { const el = $(id); if (!el) continue; el.value = Math.round(prefs.vol[k] * 100);
   el.oninput = () => { prefs.vol[k] = el.value / 100; savePrefs(); amb.setVolumes(prefs.vol); if (k === 'music') setMusic(); if (k === 'fx') amb.chime('spin'); }; }
 function setMusic() {
-  if (!state.started) return; amb.resume(); amb.setMuted(state.muted); const A = state.area; let key = A.music; if (A.id === 'strip' && state.driving) key = 'pool'; if (state.limo) key = state.limo.radio;
-  const vol = state.muted ? 0 : (state.limo ? 0.5 : (A.vol || 0.6)) * prefs.vol.music;
-  for (const [k, a] of Object.entries(tracks)) { if (k === key) { a.volume = vol; if (a.paused) a.play().catch(() => {}); } else if (!a.paused) a.pause(); }
-  curTrack = key; }
+  if (!state.started) return; amb.resume(); amb.setMuted(state.muted); const A = state.area, key = musicKey();
+  const vol = state.muted ? 0 : (state.limo ? 0.5 : state.driving ? 0.55 : (A.vol || 0.6)) * prefs.vol.music;
+  music.play(key, vol); curTrack = key; if (state.ui === 'music') renderMusic(); }
+function musicKey() { const A = state.area; if (!A) return null;
+  if (state.limo) return state.limo.radio && state.limo.radio !== 'off' ? 'radio:' + state.limo.radio : null;
+  if (A.id === 'strip' && state.driving) return prefs.radio === 'off' ? null : 'radio:' + (prefs.radio || 'hits');
+  if (A.id === 'room') { const s = prefs.suiteSt || 'suite'; return s === 'off' ? null : s === 'suite' ? 'suite' : 'radio:' + s; }
+  return A.music; }
+const SRC_NAME = k => !k ? '' : k.startsWith('radio:') ? `${state.limo ? 'Limo radio' : state.area.id === 'room' ? 'Suite speaker' : 'Car radio'} · ${station(k.slice(6)).icon} ${station(k.slice(6)).n}` : k === 'club' ? '🎧 DJ Tileo · Mega Club' : k === 'suite' ? '🛏️ Suite speaker · Suite Chill' : k === 'pool' ? '🏝️ Pool Deck' : k === 'needle' ? '🗼 Sky Needle' : '🦁 Kingdom Lounge';
+let npT = 0; function nowPlaying(d, why) { const s = SONGS[d.song]; if (!s || !state.started) return; const el = $('nowPlay'); el.innerHTML = `♪ <b>${s.t}</b> · ${s.a}<small>${SRC_NAME(d.key)}</small>`; el.classList.add('on'); clearTimeout(npT); npT = setTimeout(() => el.classList.remove('on'), 6000);
+  if (state.ui === 'music') renderMusic(); }
+// car / limo / suite stations, next song, DJ requests (📱 Music, the 📻 button while driving, B)
+function cycleRadio() { if (state.limo) return limo.cycleRadio(); if (state.area.id === 'room') { const ids = ['suite', ...STATIONS.map(s => s.id)]; prefs.suiteSt = ids[(ids.indexOf(prefs.suiteSt || 'suite') + 1) % ids.length]; savePrefs(); setMusic(); toast(prefs.suiteSt === 'suite' ? '🛏️ Suite Chill' : `${station(prefs.suiteSt).icon} ${station(prefs.suiteSt).n}`); return; }
+  if (!state.driving) return openMusic(); const ids = STATIONS.map(s => s.id); prefs.radio = ids[(ids.indexOf(prefs.radio || 'hits') + 1) % ids.length]; savePrefs(); setMusic(); const st = station(prefs.radio); toast(`${st.icon} ${st.n}`); syncButtons(); }
+function openMusic() { if (!state.started) return; toggleWheel(false); showUI('music'); renderMusic(); }
+function renderMusic() { const c = music.current, k = curTrack, box = $('musicBody'); if (!box) return;
+  const btn = (label, on, fn, cls = 'txt') => { const b = document.createElement('button'); b.className = cls + (on ? ' on' : ''); b.innerHTML = label; b.onclick = fn; return b; };
+  box.innerHTML = `<div class="mNow">${c && !state.muted ? `<small>${SRC_NAME(k)}</small><b>${c.t}</b><span>${c.a}</span>` : state.muted ? '<b>🔇 Muted</b><span>Tap Unmute to hear the music.</span>' : '<b>No music here</b><span>The Strip has city sound only: hop in the car for the radio.</span>'}</div><div class="mRow" id="mCtl"></div>`;
+  const ctl = box.querySelector('#mCtl'); if (c) ctl.append(btn('⏭ Next song', false, () => { music.next(); }, 'gold')); ctl.append(btn(state.muted ? '🔊 Unmute' : '🔇 Mute', false, () => { toggleMute(); renderMusic(); }));
+  const where = state.limo ? 'limo' : state.driving ? 'car' : state.area.id === 'room' ? 'suite' : null;
+  if (where) { box.insertAdjacentHTML('beforeend', `<h3>${where === 'suite' ? 'Suite speaker' : where === 'limo' ? 'Limo radio' : 'Car radio'}</h3>`); const row = document.createElement('div'); row.className = 'sw mStations';
+    const cur = where === 'limo' ? (state.limo.radio || 'off') : where === 'car' ? (prefs.radio || 'hits') : (prefs.suiteSt || 'suite');
+    const opts = (where === 'suite' ? [{ id: 'suite', n: 'Suite Chill', icon: '🛏️' }] : []).concat(STATIONS);
+    for (const st of opts) row.append(btn(`${st.icon} ${st.n}`, cur === st.id, () => { if (where === 'limo') { limo.setRadio(st.id === 'off' ? null : st.id); } else if (where === 'car') { prefs.radio = st.id; savePrefs(); setMusic(); } else { prefs.suiteSt = st.id; savePrefs(); setMusic(); } renderMusic(); })); box.append(row); }
+  if (k === 'club' || k === 'suite' || (k && k.startsWith('radio:'))) { box.insertAdjacentHTML('beforeend', `<h3>${k === 'club' ? 'Request a song from DJ Tileo' : 'Pick a song'}</h3>`); const row = document.createElement('div'); row.className = 'mList';
+    for (const id of (k === 'club' ? LISTS.club : k === 'suite' ? LISTS.suite : station(k.slice(6)).list)) row.append(btn(`${c && c.id === id ? '▶ ' : ''}${SONGS[id].t}`, c && c.id === id, () => { music.request(k, id); if (k === 'club') toast(pick(['DJ Tileo: "Say less!" 🦁', 'DJ Tileo: "Coming right up!"', 'DJ Tileo: "Great taste. Dropping it now."'])); }));
+    box.append(row); }
+  const vr = document.createElement('div'); vr.className = 'volRow'; vr.innerHTML = `<label>Music volume <input type="range" min="0" max="100" step="5" value="${Math.round(prefs.vol.music * 100)}"></label>`; vr.querySelector('input').oninput = e => { prefs.vol.music = e.target.value / 100; savePrefs(); setMusic(); const m = $('volMusic'); if (m) m.value = e.target.value; }; box.append(vr); }
+const pick = a => a[Math.random() * a.length | 0];
 
 // ---------- input ----------
 const keys = {}; addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; keys[e.code] = true;
@@ -138,7 +169,7 @@ const keys = {}; addEventListener('keydown', e => { if (e.target.tagName === 'IN
   if (e.code === 'Space') { e.preventDefault(); state.driving ? horn() : jump(); }
   if (e.code === 'KeyE' || e.code === 'Enter') doInteract(); if (e.code === 'KeyG') toggleDance(); if (e.code === 'KeyN') cycleTod(); if (e.code === 'KeyM') toggleMute();
   if (e.code === 'KeyR') toggleSprint(); if (e.code === 'KeyQ') toggleWheel(); if (e.code === 'KeyV') toggleCam(); if (e.code === 'KeyK') toggleMini();
-  if (e.code === 'KeyH') horn(); if (e.code === 'KeyL') toggleLights();
+  if (e.code === 'KeyH') horn(); if (e.code === 'KeyL') toggleLights(); if (e.code === 'KeyB') cycleRadio();
   const dg = /^Digit([1-8])$/.exec(e.code); if (dg) setEmote(EMOTE_KEYS[+dg[1] - 1]); });
 addEventListener('keyup', e => keys[e.code] = false);
 const joy = { x: 0, y: 0, id: null }; const jb = $('joy'), jk = $('joyKnob');
@@ -159,7 +190,7 @@ const pinchEnd = e => { pinch.delete(e.pointerId); pinchD = 0; }; addEventListen
 const dragEnd = e => { if (e.pointerId === drag.id) drag.id = null; }; cv.addEventListener('pointerup', dragEnd); cv.addEventListener('pointercancel', dragEnd);
 cv.addEventListener('wheel', e => { if (state.ui === 'photo') return photo.zoom(e.deltaY); if (state.ui === 'binoc') return needle.setZoom(needle.bz.zoom * (e.deltaY > 0 ? 0.85 : 1.18)); cam.dist = Math.min(state.driving ? 18 : 14, Math.max(2.5, cam.dist + e.deltaY * 0.01)); }, { passive: true });
 $('btnAct').onclick = doInteract; $('btnDance').onclick = toggleDance; $('btnNight').onclick = cycleTod; $('btnMute').onclick = toggleMute; $('btnHelp').onclick = () => showUI('help');
-$('btnJump').onclick = () => jump(); $('btnHorn').onclick = () => horn(); $('btnLights').onclick = () => toggleLights(); $('btnSprint').onclick = () => toggleSprint(); $('btnEmote').onclick = () => toggleWheel();
+$('btnJump').onclick = () => jump(); $('btnRadio').onclick = () => cycleRadio(); $('btnHorn').onclick = () => horn(); $('btnLights').onclick = () => toggleLights(); $('btnSprint').onclick = () => toggleSprint(); $('btnEmote').onclick = () => toggleWheel();
 $('btnCam').onclick = () => toggleCam(); $('btnMap').onclick = () => toggleMini(); $('btnPhone').onclick = () => openPhone(); $('btnTp').onclick = () => openTeleport(); $('miniWrap').onclick = () => openMap(); $('btnPhoto').onclick = () => photo.open();
 $('binocDone').onclick = () => closeUI(); $('hailWhite').onclick = () => hailLimo('white'); $('hailBlack').onclick = () => hailLimo('black');
 // stop HUD buttons from also starting a camera drag / double-tap zoom
@@ -187,19 +218,19 @@ let actx = null; function horn() { if (!state.driving) return; try { actx = actx
   $('btnHorn').classList.add('on'); setTimeout(() => $('btnHorn').classList.remove('on'), 300); }
 function syncButtons() { const d = state.driving;
   $('btnJump').classList.toggle('hidden', d); $('btnHorn').classList.toggle('hidden', !d); $('btnEmote').classList.toggle('hidden', d); $('btnLights').classList.toggle('hidden', !d);
-  $('btnSprint').classList.toggle('hidden', d); $('btnDance').classList.toggle('hidden', d);
+  $('btnSprint').classList.toggle('hidden', d); $('btnDance').classList.toggle('hidden', d); $('btnRadio').classList.toggle('hidden', !d); if (d) $('btnRadio').innerHTML = `${station(prefs.radio || 'hits').icon}<span>Radio</span>`;
   $('btnSprint').classList.toggle('on', state.sprint); $('btnDance').classList.toggle('on', state.emote === 'dance'); $('btnLights').classList.toggle('on', state.lights);
   $('btnMap').classList.toggle('on', prefs.mini); $('hud').classList.toggle('nomini', !prefs.mini); $('btnCam').textContent = prefs.fp ? '👁️' : '🎥'; }
 function openPhone() { if (!state.started) return; toggleWheel(false); showUI('phone'); }
 document.querySelectorAll('.appGrid button').forEach(b => b.onclick = () => { const a = b.dataset.app; closeUI();
-  ({ map: openMap, emote: () => toggleWheel(true), cam: toggleCam, mini: () => toggleMini(), tod: cycleTod, mute: toggleMute, help: () => showUI('help'), credits: openCredits, teleport: openTeleport, limo: () => openHail(true), photo: () => photo.open(), gallery: () => photo.openGallery(), people: () => net && net.openPeople(), account: () => net && net.openAuth('in') })[a](); });
+  ({ map: openMap, emote: () => toggleWheel(true), cam: toggleCam, mini: () => toggleMini(), tod: cycleTod, mute: openMusic, help: () => showUI('help'), credits: openCredits, teleport: openTeleport, limo: () => openHail(true), photo: () => photo.open(), gallery: () => photo.openGallery(), people: () => net && net.openPeople(), account: () => net && net.openAuth('in') })[a](); });
 function openCredits() { const sk = SKYLINE_CREDITS.map(c => `<li><b>${c.tod} suite view:</b> “${c.title}” by ${c.author}, <a href="${c.url}" target="_blank" rel="noopener">Wikimedia Commons</a>, ${c.license} (<a href="https://creativecommons.org/licenses/${c.license.includes('3.0') ? 'by-sa/3.0' : 'by-sa/2.0'}/" target="_blank" rel="noopener">license</a>). Resized &amp; re-encoded.</li>`).join('');
   $('creditsBody').innerHTML = `<h3>Game</h3><p>TILEO KINGDOM: Strip Life, an original parody game. All resort, casino &amp; brand names are fictional. Play coins only, with no real-money gambling. 18+.</p>
   <h3>Realistic people</h3><ul><li>Bodies, faces and outfits adapted from the <a href="https://github.com/microsoft/Microsoft-Rocketbox" target="_blank" rel="noopener">Microsoft Rocketbox Avatar Library</a> (MIT License, © Microsoft Corporation): textures resized, outfits/skin/beards recoloured at runtime, meshes converted to glTF. They are driven by the Quaternius animations below (no Mixamo motion).</li></ul>
   <h3>Surfaces &amp; lighting</h3><ul><li>Asphalt, concrete, desert rock, travertine, marble, casino carpet and palm textures: generated for this game (tools-src/gen_textures.py), no photos.</li><li>Physical sky: three.js Sky addon (Preetham scattering, MIT). SMAA and bokeh depth of field: three.js addons (MIT).</li></ul>
   <h3>Characters &amp; animation</h3><ul><li>Universal Base Characters by <a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0)</li><li>Universal Animation Library 1 &amp; 2 by Quaternius (CC0)</li><li>DJ Tileo lion head, outfits, wristbands: original, procedural</li></ul>
   <h3>Las Vegas skyline photos (suite windows)</h3><ul>${sk}</ul>
-  <h3>Engine</h3><p><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> r186 (MIT), meshoptimizer decoder (MIT).</p><h3>Music</h3><p>Original tracks supplied for TILEO KINGDOM.</p>`;
+  <h3>Engine</h3><p><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> r186 (MIT), meshoptimizer decoder (MIT).</p><h3>Music</h3><p>Original tracks supplied for TILEO KINGDOM:</p><ul>${Object.values(SONGS).map(s => `<li>“${s.t}” · ${s.a}</li>`).join('')}</ul>`;
   showUI('credits'); }
 // ---------- mini-map + full Strip map ----------
 const miniCv = $('miniMap'), mctx = miniCv.getContext('2d'), mapCv = $('mapCanvas'), fctx = mapCv.getContext('2d');
@@ -297,7 +328,7 @@ const DRINKS = ["Tiger's Kiss", 'Gold Mane Margarita', 'Velvet Roar', 'Midnight 
 function drink(where) { if (save.coins < 15) return toast('Not enough coins. Visit the Coin Cage for a daily bonus.'); setCoins(save.coins - 15); toast(`${DRINKS[Math.floor(Math.random() * DRINKS.length)]} from the ${where} (-15 coins). Cheers! 🥂`); }
 function dailyBonus() { const d = new Date().toDateString(); if (save.bonusDay === d) return toast('Daily bonus already collected. Come back tomorrow. (Play coins only, no cash-out.)'); save.bonusDay = d; setCoins(save.coins + 500); toast('+500 Kingdom Coins daily bonus!'); }
 function vipBooth() { if (state.vip) return toast('Your VIP booth is reserved all night.'); if (save.coins < 300) return toast('VIP booth needs 300 coins.'); setCoins(save.coins - 300); state.vip = true; toast('VIP bottle-service booth booked (-300). Sparklers on the way! ✨'); }
-function requestTrack() { const order = ['club', 'pool', 'lobby']; club.music = order[(order.indexOf(club.music) + 1) % 3]; setMusic(); toast(`DJ Tileo: "Say less!" Now spinning the ${club.music} track.`); }
+function requestTrack() { openMusic(); }
 
 // ---------- slots ----------
 const SYM = ['🍒', '💎', '7', '👑', '🐯', '🦁'], W = [30, 22, 16, 12, 10, 7], PAY = { '🦁': 50, '🐯': 25, '👑': 15, '7': 10, '💎': 8, '🍒': 5 };
@@ -358,7 +389,7 @@ let gateMode = URL_TRIP ? 'trip' : 'free';
 function pickGateMode(m) { gateMode = m; document.querySelectorAll('#gateModes [data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
   $('gateYes').textContent = m === 'trip' ? "I'm 18 or older · Start the trip" : "I'm 18 or older · Enter"; }
 document.querySelectorAll('#gateModes [data-mode]').forEach(b => b.onclick = () => pickGateMode(b.dataset.mode)); pickGateMode(gateMode);
-$('gateYes').onclick = () => { $('gate').classList.add('hidden'); for (const a of Object.values(tracks)) a.preload = 'auto'; state.audioUnlocked = true;
+$('gateYes').onclick = () => { $('gate').classList.add('hidden'); state.audioUnlocked = true;
   if (gateMode === 'trip') startTripMode(); else openCreator(); };
 $('gateNo').onclick = () => { location.href = 'about:blank'; };
 
@@ -572,7 +603,7 @@ function goToSpot(area, x, z, done) { // "Go to" a friend from the Online sheet
   transition(() => { parkCar(); enterArea(area, x, z); const q = safeSpot(x, z); player.position.set(q.x, areas[area].floorY || 0, q.z); updateCamera(1); syncButtons(); renderMini(true); if (done) done(); });
 }
 net = initNet({ $, state, player, car, scene, camera, save, toast, showUI, closeUI, persist, applyProfile, goTo: goToSpot, isTouch, chime: () => amb.chime('spin'), limo, comp });
-window.__game.net = net; window.__game.comp = comp; Object.assign(window.__game, { closeUI, showUI, setCoins, C5, ctx }); window.__game.carHit = carHit; window.__game.syncCharacters = syncCharacters;
+window.__game.net = net; window.__game.comp = comp; Object.assign(window.__game, { closeUI, showUI, setCoins, C5, ctx, music, openMusic, cycleRadio, setMusic }); window.__game.carHit = carHit; window.__game.syncCharacters = syncCharacters;
 
 // ---------- v7: Epic or Fail: Vegas Trip (story mode, loaded from trip/ only when picked) ----------
 async function startTripMode() {
@@ -582,7 +613,7 @@ async function startTripMode() {
   Object.assign(save, ts && ts.look ? ts : { coins: 0, owned: ['solid'], room: 2407, bonusDay: '', look: { ...fpLook, style: 'solid', banded: true } });
   save.owned = ['solid']; save.room = 2407;
   showLoading(0.7, 'Packing for Vegas…');
-  try { const m = await import('./trip/trip.js?v=1793986352');
+  try { const m = await import('./trip/trip.js?v=1793987979');
     trip = await m.initTrip({ $, THREE, state, player, car, cam, camera, scene, save, prefs, savePrefs, areas, strip, lobby, pool, rooms, room, club, needleA, ctx, C5, comp, limo, needle, photo, gfx, amb, net, isTouch,
       toast, setCoins, persist, transition, enterArea, showUI, closeUI, setTod, applyLook, makeCharacter, animate, STYLES, EMOTES, CHAR, waterDepth, blocked, safeSpot, inRect, teleport, updateBand, syncButtons, renderMini,
       updateCamera: d => updateCamera(d), faceFor, beginPlay, openCreator, buildCreator, setEmote, parkCar, exitCar, lmk, tpBusy: () => tpBusy, keys, joy }); }

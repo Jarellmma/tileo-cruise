@@ -3,11 +3,11 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { G, M, add, box, cyl, T, PI, glow, logoPlane } from './core.js?v=1793986352';
-import { Q } from './quality.js?v=1793986352';
-import { realLook, buildRealBody, retexture, srcBind, setTigerSource, warmPeople, FACES as RFACES, BODIES } from './people.js?v=1793986352';
-import { PEOPLE_BASES } from './people_data.js?v=1793986352';
-import { carParts, carMats } from './cars.js?v=1793986352';
+import { G, M, add, box, cyl, T, PI, glow, logoPlane } from './core.js?v=1793987979';
+import { Q } from './quality.js?v=1793987979';
+import { realLook, buildRealBody, retexture, srcBind, setTigerSource, warmPeople, FACES as RFACES, BODIES } from './people.js?v=1793987979';
+import { PEOPLE_BASES } from './people_data.js?v=1793987979';
+import { carParts, carMats } from './cars.js?v=1793987979';
 
 export const BAND_C = '#e0b24a'; // the TILEO KINGDOM guest wristband (gold); guests get one at check-in
 export const STYLES = {

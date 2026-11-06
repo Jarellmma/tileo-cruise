@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex,nofollow">
 <title>TILEO KINGDOM · Strip Life</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🦁%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=1793986352">
-<script src="config.js?v=1793986352"></script>
+<link rel="stylesheet" href="style.css?v=1793987979">
+<script src="config.js?v=1793987979"></script>
 <script type="importmap">{"imports":{"three":"./lib/three.module.js","three/addons/":"./lib/jsm/"}}</script>
 </head>
 <body>
@@ -42,6 +42,7 @@
     <button id="btnEmote" class="abtn small ca1" title="Emotes (Q, 1-8)">😀<span>Emote</span></button>
     <button id="btnLights" class="abtn small ca1 hidden" title="Headlights (L)">💡<span>Lights</span></button>
     <button id="btnSprint" class="abtn small ca2" title="Sprint toggle (R, or hold Shift)">🏃<span>Sprint</span></button>
+    <button id="btnRadio" class="abtn small ca2 hidden" title="Car radio station (B)">📻<span>Radio</span></button>
     <button id="btnDance" class="abtn small ca3" title="Dance (G)">💃<span>Dance</span></button>
     <button id="btnTp" class="abtn small ca4" title="Teleport (T)">🌀<span>Teleport</span></button>
   </div>
@@ -60,6 +61,7 @@
     <div id="limoStops" class="hidden"></div>
     <div id="limoArrive" class="hidden"><span id="limoArrTxt"></span><button id="lbOut">🚪 Get out</button><button id="lbCruise">🚘 Keep cruising</button></div>
   </div>
+  <div id="nowPlay"></div>
   <div id="toast"></div>
 </div>
 
@@ -177,7 +179,8 @@
     <p><b>Photo mode:</b> C or 📸 anywhere · Space shutter · F rear/selfie · 1-4 filters (none, warm, B&amp;W, neon) · W watermark · G gallery · drag to aim, wheel/pinch to zoom.</p>
     <p><b>Limo:</b> hail at the TILEO KINGDOM curb, from 📱 Limo, or teleport. V camera view · Space stand in the sunroof · B radio · O windows · 📍 pick a stop · X end ride.</p>
     <p><b>Sky Needle:</b> ride the street-level elevator next to the tower or teleport to the top. The deck has an indoor and an outdoor ring; walk all the way around. 🔭 binoculars cost 5 coins.</p>
-    <p><b>Driving:</b> W/S gas &amp; brake/reverse, A/D steer, H or 📯 horn, L or 💡 headlights, E exit car.</p>
+    <p><b>Driving:</b> W/S gas &amp; brake/reverse, A/D steer, H or 📯 horn, L or 💡 headlights, B or 📻 radio station, E exit car.</p>
+    <p><b>Music:</b> 📱 → Music shows what's playing: skip songs, change the car, limo or suite station, or request a song from DJ Tileo in the Mega Club.</p>
     <p><b>Casino tables:</b> walk up to the roulette wheel or a blackjack table and press E. Blackjack pays 3:2, dealer stands on 17; roulette has a single zero. Play coins only.</p>
     <p class="onlineOnly"><b>Online (website):</b> Y or 👥 shows who is here, chat and parties. Public Strips use preset phrases; start a private party and send the invite link to chat freely. 👑 Account in the phone signs in with your TILEO account (the same one as TILEO Cruise Lines).</p>
     <h3>Graphics quality</h3>
@@ -223,6 +226,15 @@
       <button data-app="account" class="hidden">👑<span>Account</span></button>
     </div>
     <button class="ghost" data-close="phone">Close</button>
+  </div>
+</div>
+
+<!-- v7.1: music -->
+<div id="music" class="overlay hidden">
+  <div class="card small musicCard">
+    <h2>🎵 Music</h2>
+    <div id="musicBody"></div>
+    <button class="ghost" data-close="music">Close</button>
   </div>
 </div>
 
@@ -331,6 +343,6 @@
 </div>
 
 <div id="fade"><img id="fadeLion" src="assets/images/resort-logo.png" alt=""></div>
-<script type="module" src="main.js?v=1793986352"></script>
+<script type="module" src="main.js?v=1793987979"></script>
 </body>
 </html>

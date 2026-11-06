@@ -2,10 +2,11 @@
 // The route runs south on the east lanes, U-turns, north on the west lanes, U-turns, and repeats.
 // Local frame: +z forward, -x is the curb side, the floor is at y 0.36.
 import * as THREE from 'three';
-import { M, neon, glow, goldM, chromeM, onNight, logoPlane, canvas, tex, PI } from './core.js?v=1793986352';
-import { Batch, streetTex } from './city.js?v=1793986352';
-import { makeCharacter, animate } from './characters.js?v=1793986352';
-import { wheelParts } from './cars.js?v=1793986352';
+import { M, neon, glow, goldM, chromeM, onNight, logoPlane, canvas, tex, PI } from './core.js?v=1793987979';
+import { Batch, streetTex } from './city.js?v=1793987979';
+import { makeCharacter, animate } from './characters.js?v=1793987979';
+import { wheelParts } from './cars.js?v=1793987979';
+import { STATIONS, station } from './music.js?v=1793987979';
 
 const XL = 12.4, ZE = 615, RA = 12.4, ARC = PI * RA, LEN = 4 * ZE + 2 * ARC; // loop length is about 2538 m
 const SEG = [2 * ZE, 2 * ZE + ARC, 4 * ZE + ARC, LEN];
@@ -101,7 +102,7 @@ export function buildLimo(strip, C) {
   function place(s) { const r = routeAt(s); grp.position.set(r.x, 0.02, r.z); grp.rotation.y = r.h; grp.updateMatrixWorld(true); return r; }
   function start(color = 'white') {
     if (st.driving) C.parkCar(); C.closeUI(); setColor(color); leaving.on = false;
-    L = st.limo = { s: PICKUP_S, v: 0, phase: 'board', t: 0, view: 'cabin', stand: false, open: true, windows: false, radio: 'club', stop: null, look: { yaw: 0, pitch: 0 }, passing: '', color, odo: 0 };
+    L = st.limo = { s: PICKUP_S, v: 0, phase: 'board', t: 0, view: 'cabin', stand: false, open: true, windows: false, radio: 'party', stop: null, look: { yaw: 0, pitch: 0 }, passing: '', color, odo: 0 };
     place(L.s); grp.visible = true; roofGlass.position.z = -2.6; roofGlass.position.y = 1.775; winG.visible = true;
     st.emote = null; st.air = false; st.jy = 0; C.toggleWheel(false); document.body.classList.add('inLimo'); C.$('limoBar').classList.remove('hidden'); ui(); C.setMusic();
     C.toast('🚘 Your chauffeur welcomes you aboard. Sit back and cruise the Strip.'); }
@@ -117,10 +118,12 @@ export function buildLimo(strip, C) {
   function setView(v) { if (L && CAMS[v]) { L.view = v; L.look.yaw = L.look.pitch = 0; ui(); } }
   function toggleStand() { if (!L) return; L.stand = !L.stand; if (L.stand) { L.open = true; L.view = 'roof'; C.toast('🌅 Standing up through the sunroof. Wave to the Strip!'); } else L.view = 'cabin'; L.look.yaw = L.look.pitch = 0; ui(); }
   function toggleWindows() { if (!L) return; L.windows = !L.windows; winG.visible = !L.windows; C.toast(L.windows ? '🪟 Windows down' : '🪟 Windows up'); ui(); }
-  const RADIO = ['club', 'lobby', 'pool', null], RNAME = { club: 'DJ Tileo · Club', lobby: 'Kingdom Lounge', pool: 'Pool Party', null: 'Off' };
-  function cycleRadio() { if (!L) return; L.radio = RADIO[(RADIO.indexOf(L.radio) + 1) % RADIO.length]; C.setMusic(); ui(); C.toast('📻 ' + RNAME[L.radio]); }
+  // v7.1: the limo radio uses the same stations as the convertible (music.js)
+  const RADIO = [...STATIONS.filter(s => s.id !== 'off').map(s => s.id), null], RNAME = k => k ? station(k).n : 'Off';
+  function cycleRadio() { if (!L) return; L.radio = RADIO[(RADIO.indexOf(L.radio) + 1) % RADIO.length]; C.setMusic(); ui(); C.toast(L.radio ? `${station(L.radio).icon} ${RNAME(L.radio)}` : '🔇 Radio off'); }
+  function setRadio(k) { if (!L) return; L.radio = k; C.setMusic(); ui(); }
   function ui() { if (!L) return; C.$('lbView').innerHTML = `🎥<span>${VNAME[L.view]}</span>`; C.$('lbStand').innerHTML = L.stand ? '🪑<span>Sit down</span>' : '🌅<span>Stand up</span>';
-    C.$('lbRadio').innerHTML = `📻<span>${RNAME[L.radio]}</span>`; C.$('lbWin').innerHTML = `🪟<span>${L.windows ? 'Windows up' : 'Windows down'}</span>`; C.$('lbEnd').innerHTML = L.phase === 'ending' ? '⏳<span>Pulling over</span>' : '🚪<span>End ride</span>'; }
+    C.$('lbRadio').innerHTML = `📻<span>${RNAME(L.radio)}</span>`; C.$('lbWin').innerHTML = `🪟<span>${L.windows ? 'Windows up' : 'Windows down'}</span>`; C.$('lbEnd').innerHTML = L.phase === 'ending' ? '⏳<span>Pulling over</span>' : '🚪<span>End ride</span>'; }
   function openStops() { const box = C.$('limoStops'); if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
     box.innerHTML = '<b>Choose a stop</b>' + stopsList().map(p => `<button data-stop="${p.name}">${p.icon} ${p.name}</button>`).join('') + '<button data-stop="">✕ Close</button>';
     box.querySelectorAll('button').forEach(bt => bt.onclick = e => { e.stopPropagation(); const n = bt.dataset.stop; if (n) stopAt(n); else box.classList.add('hidden'); }); box.classList.remove('hidden'); }
@@ -172,5 +175,5 @@ export function buildLimo(strip, C) {
     const d = makeCharacter(DRV_LOOK); d.userData.noInvite = true; d.position.set(0.5, 0.3, 2.3); sh.add(d); sh.userData.drv = d; sh.userData.paint = pm; sh.visible = true; grp.parent.add(sh); return sh; }
   function seatWorld(g, i, out) { out.copy(i < 0 ? SEAT : i === 99 ? STAND : J_SEATS[i % J_SEATS.length]); return g.localToWorld(out); }
   function cabinCamera(g) { const [P, Tg] = CAMS.cabin; cp.set(...P); ctg.set(...Tg); g.localToWorld(cp); g.localToWorld(ctg); C.camera.position.copy(cp); C.camera.lookAt(ctg); C.CHAR.camPos.copy(cp); return true; }
-  return { grp, start, end, abort, getOut, cruise, makeShell, seatWorld, cabinCamera, J_SEATS, stopAt, cycleView, setView, toggleStand, toggleWindows, cycleRadio, update, camera, look, setColor, stopsList, routeAt, PICKUP_S, LEN, get ride() { return L; }, leaving, VNAME };
+  return { grp, start, end, abort, getOut, cruise, makeShell, seatWorld, cabinCamera, J_SEATS, stopAt, cycleView, setView, toggleStand, toggleWindows, cycleRadio, setRadio, update, camera, look, setColor, stopsList, routeAt, PICKUP_S, LEN, get ride() { return L; }, leaving, VNAME };
 }
