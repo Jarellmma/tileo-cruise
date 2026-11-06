@@ -1,10 +1,10 @@
 // Tileo Kingdom interiors: lobby+casino, pool deck, room floor, hotel room, mega club
 import * as THREE from 'three';
-import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, canvas, tex , pbr } from './core.js?v=1793745796';
-import { makeLion, makeCharacter, makeDJ, randomLook, animate, applyLook } from './characters.js?v=1793745796';
-import { palms, facadeMat, makeWater } from './world.js?v=1793745796';
-import { STY, facade, roofMat } from './city.js?v=1793745796';
-import { Q } from './quality.js?v=1793745796';
+import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, canvas, tex , pbr } from './core.js?v=1793979068';
+import { makeLion, makeCharacter, makeDJ, randomLook, animate, applyLook } from './characters.js?v=1793979068';
+import { palms, facadeMat, makeWater } from './world.js?v=1793979068';
+import { STY, facade, roofMat } from './city.js?v=1793979068';
+import { Q } from './quality.js?v=1793979068';
 
 const R = rng(99);
 const gold = () => goldM(0.35, 0.26);
@@ -128,7 +128,7 @@ export function buildLobby(A, ctx) {
   const cry = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.16), B(0xfff6dc), 60); const mm = new THREE.Matrix4();
   for (let k = 0; k < 60; k++) { const a = k * 2.4, r = 1.2 + (k % 3) * 1.1; mm.makeTranslation(Math.cos(a) * r, -0.6 - (k % 5) * 0.35, Math.sin(a) * r); cry.setMatrixAt(k, mm); } ch.add(cry);
   A.anim.push(t => ch.rotation.y = t * 0.05);
-  const cl = new THREE.PointLight(0xffd8a0, 34, 40, 1.3); cl.position.set(0, 6.5, 0); g.add(cl);
+  const cl = new THREE.PointLight(0xffd8a0, 26, 40, 1.3); cl.position.set(0, 6.5, 0); g.add(cl);
   // check-in desk (west)
   box(g, M(0x0e0d0c), -15, 0, 0, 2.2, 1.2, 16); box(g, gm, -15, 1.2, 0, 2.6, 0.15, 16.4); box(g, new THREE.MeshStandardMaterial({ map: rep(T.tiger, 6, 1) }), -13.85, 0.15, 0, 0.06, 0.9, 15.6);
   A.aabbs.push([-20, -13.6, -8.4, 8.4]);
@@ -151,8 +151,26 @@ export function buildLobby(A, ctx) {
   // elevators (back wall) + front doors
   elevator(A, g, -3, -24.4, 0, 'ELEVATOR'); elevator(A, g, 3.2, -24.4, 0, 'ELEVATOR');
   A.interacts.push({ x: 0, z: -21, r: 4.5, label: 'Call elevator', act: () => ctx.openElevator() });
-  const glass = glow(0xffe0a0, 0xffc060, 0.6, 0.9); box(g, glass, 0, 0, 24.5, 8, 7, 0.2); box(g, gm, 0, 7, 24.5, 8.6, 0.5, 0.4); box(g, gm, 0, 0, 24.4, 0.15, 7, 0.4);
-  A.interacts.push({ x: 0, z: 22, r: 3.5, label: 'Exit to the Strip', act: () => ctx.exitToStrip() });
+  // v6.3: glass doors to the Strip, matching the outside; they slide open as you walk up (A.exitDoors.want, set by main.js).
+  // (The old glowing panel here filled the screen with white whenever the camera backed up to it.)
+  const exitDoors = A.exitDoors = { k: 0, want: 0, leaves: [] };
+  { const Z = 24.5, DH = 3.4, TOP = 7, glassM = new THREE.MeshPhysicalMaterial({ color: 0xb8c8d0, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.28, envMapIntensity: 1.4, depthWrite: false, side: THREE.DoubleSide });
+    box(g, glow(0x0a0e18, 0x1a2848, 0.3, 0.35), 0, 0, Z + 0.42, 8, TOP, 0.06); // the Strip outside, seen through the glass
+    for (const x of [-2.8, 0, 2.8]) box(g, glow(0x302010, 0xd09040, 0.2, 0.6), x, 4.6, Z + 0.38, 0.35, 0.22, 0.02); // street lamps outside
+    const pane = (w, h) => new THREE.Mesh(new THREE.PlaneGeometry(w, h), glassM);
+    for (const s of [-1, 1]) { const m = pane(1.9, DH - 0.12); m.position.set(s * 3, DH / 2, Z + 0.12); g.add(m); }
+    { const m = pane(7.8, TOP - DH - 0.14); m.position.set(0, DH + (TOP - DH) / 2, Z + 0.12); g.add(m); }
+    box(g, gm, 0, 0, Z + 0.12, 8, 0.1, 0.2); box(g, gm, 0, DH - 0.07, Z + 0.12, 8, 0.14, 0.22);
+    for (const x of [-4, -2, 2, 4]) box(g, gm, x, 0, Z + 0.12, 0.14, TOP, 0.2);
+    for (const s of [-1, 1]) { const leaf = new THREE.Group(); leaf.position.set(s * 1, 0, Z - 0.04); g.add(leaf);
+      const gp = pane(1.92, DH - 0.16); gp.position.y = DH / 2; leaf.add(gp);
+      for (const [dx, w, y, h] of [[-0.97, 0.06, 0, DH], [0.97, 0.06, 0, DH], [0, 2, 0, 0.08], [0, 2, DH - 0.1, 0.08]]) { const fm = new THREE.Mesh(G.box, gm); fm.scale.set(w, h, 0.06); fm.position.set(dx, y + h / 2, 0); leaf.add(fm); }
+      const bar = new THREE.Mesh(G.box, gm); bar.scale.set(0.05, 1.4, 0.05); bar.position.set(-s * 0.8, 1.05, -0.08); leaf.add(bar);
+      exitDoors.leaves.push({ leaf, x0: s * 1, s }); }
+    A.anim.push((t, dt = 0.016) => { exitDoors.k += Math.max(-dt * 1.6, Math.min(dt * 1.6, exitDoors.want - exitDoors.k)); const e = exitDoors.k * exitDoors.k * (3 - 2 * exitDoors.k);
+      for (const L of exitDoors.leaves) L.leaf.position.x = L.x0 + L.s * 1.95 * e; }); }
+  box(g, gm, 0, 7, 24.5, 8.6, 0.5, 0.4);
+  A.interacts.push({ x: 0, z: 22, r: 3.5, label: 'Exit to the Strip', act: () => ctx.walkInto ? ctx.walkInto(0, 23.5, () => ctx.exitToStrip()) : ctx.exitToStrip() });
   // ---- casino ----
   // DJ Tileo casino-floor signage (east wall)
   logoPlane(g, 'dj', 69.5, 6.4, 12, 7.2, -PI / 2, { back: 0x0b0906, pad: 0.12 }); signMesh(g, 'TONIGHT · DJ TILEO · MEGA CLUB', '#ffcf4a', 69.45, 10.9, 12, 9, 1.1, -PI / 2, '', '#0e0d0c');

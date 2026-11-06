@@ -3,7 +3,7 @@
 // Accounts are shared with TILEO Cruise Lines (same username and password); each game keeps its own saved profile.
 // Public Strips (strangers) only allow the preset chat phrases (also enforced on the server); private parties chat freely.
 import * as THREE from 'three';
-import { makeCharacter, applyLook, animate, disposeCharacter, makeCar, BAND_C, STYLES, HAIRSTYLES, EMOTES, FACES } from './characters.js?v=1793745796';
+import { makeCharacter, applyLook, animate, disposeCharacter, makeCar, BAND_C, STYLES, HAIRSTYLES, EMOTES, FACES } from './characters.js?v=1793979068';
 
 export const QUICK_SAYS = ['Hi!', 'Follow me!', 'Meet me at the pool', 'Club tonight?', 'Nice outfit!', 'Race you down the Strip', 'Lucky streak!', 'Want a limo ride?', 'Good game!', 'Bye!'];
 const AREA_LABEL = { strip: 'On the Strip', lobby: 'Lobby & Casino', pool: 'Pool Deck', rooms: 'Suites floor', room: 'In their suite', club: 'Mega Club', needle: 'Sky Needle deck' };
@@ -102,7 +102,7 @@ export function initNet(G) {
   const shellPool = []; let shellsMade = 0;
   function takeShell(color) { let sh = shellPool.pop(); if (!sh && shellsMade < 3 && G.limo) { shellsMade++; sh = G.limo.makeShell(color); } if (sh) { sh.visible = true; sh.userData.paint.color.set(color === 'black' ? 0x0c0c0e : 0xf4f2ee); } return sh; }
   function dropShell(R) { if (R.lmo) { R.lmo.visible = false; shellPool.push(R.lmo); R.lmo = null; R.lms = undefined; } }
-  const PASS = new THREE.Vector3(-0.45, 0.25, -0.4), _s = new THREE.Vector3();
+  const PASS = new THREE.Vector3(-0.45, 0.25, -0.2), _s = new THREE.Vector3();
   // the vehicle someone rides in: mine (I'm the host) or another player's
   function hostVehicle(rd) { if (!rd) return null;
     if (rd.host === N.id) { if (rd.k === 'car' && state.driving) return { o: G.car, k: 'car' }; if (rd.k === 'limo' && state.limo && G.limo.grp.visible) return { o: G.limo.grp, k: 'limo' }; return null; }

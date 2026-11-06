@@ -3,11 +3,11 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { G, M, add, box, cyl, T, PI, glow, logoPlane } from './core.js?v=1793745796';
-import { Q } from './quality.js?v=1793745796';
-import { realLook, buildRealBody, retexture, srcBind, setTigerSource, warmPeople, FACES as RFACES, BODIES } from './people.js?v=1793745796';
-import { PEOPLE_BASES } from './people_data.js?v=1793745796';
-import { carParts, carMats } from './cars.js?v=1793745796';
+import { G, M, add, box, cyl, T, PI, glow, logoPlane } from './core.js?v=1793979068';
+import { Q } from './quality.js?v=1793979068';
+import { realLook, buildRealBody, retexture, srcBind, setTigerSource, warmPeople, FACES as RFACES, BODIES } from './people.js?v=1793979068';
+import { PEOPLE_BASES } from './people_data.js?v=1793979068';
+import { carParts, carMats } from './cars.js?v=1793979068';
 
 export const BAND_C = '#e0b24a'; // the TILEO KINGDOM guest wristband (gold); guests get one at check-in
 export const STYLES = {
@@ -376,10 +376,11 @@ export function makeCar() {
   mesh(K.tail, glow(0xff2222, 0xff0000, 0.3, 2), false);
   // cockpit: tiger seats, dashboard, steering wheel, gold sill trims
   const seat = new THREE.MeshStandardMaterial({ map: T.tiger, roughness: 0.7 }), dash = M(0x0c0c0e, { roughness: 0.5 });
-  box(g, seat, -0.45, 0.6, -0.4, 0.62, 0.45, 0.62); box(g, seat, 0.45, 0.6, -0.4, 0.62, 0.45, 0.62);
-  for (const x of [-0.45, 0.45]) { const bk = box(g, seat, x, 0.88, -0.78, 0.6, 0.72, 0.14); bk.rotation.x = -0.12; add(g, G.sph, seat, x, 1.66, -0.83, 0.17, 0.12, 0.07); }
+  // v6.3: seats at real height (cushion top 0.74, measured against the seated pose) so people sit on them, not inside them
+  box(g, seat, -0.45, 0.42, -0.46, 0.62, 0.32, 0.5); box(g, seat, 0.45, 0.42, -0.46, 0.62, 0.32, 0.5);
+  for (const x of [-0.45, 0.45]) { const bk = box(g, seat, x, 0.7, -0.79, 0.6, 0.72, 0.14); bk.rotation.x = -0.12; add(g, G.sph, seat, x, 1.48, -0.84, 0.17, 0.12, 0.07); }
   box(g, dash, 0, 0.82, 0.62, 1.6, 0.22, 0.34);
-  const steer = add(g, G.torus, M(0x1a1a1c), 0.45, 1.05, 0.28, 0.2, 0.2, 0.2); /* left-hand drive (+x is the car's left) */ steer.rotation.x = -1.0;
+  const steer = add(g, G.torus, M(0x1a1a1c), 0.45, 1.13, -0.07, 0.17, 0.17, 0.17); /* rim where the seated driver's hands are (measured) */ /* left-hand drive (+x is the car's left) */ steer.rotation.x = -1.0;
   for (const sd of [-1, 1]) box(g, gold, sd * (F.hw(-0.2) * 0.86), P.belt - 0.02, -0.25, 0.04, 0.03, 1.75);
   // DJ Tileo livery: hood (follows the hood slope) + both doors
   const hz = 1.5, hy = F.top(hz), slope = Math.atan2(F.top(hz + 0.1) - F.top(hz - 0.1), 0.2);

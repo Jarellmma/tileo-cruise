@@ -16,7 +16,7 @@ import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { BokehShader } from 'three/addons/shaders/BokehShader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { Q } from './quality.js?v=1793745796';
+import { Q } from './quality.js?v=1793979068';
 
 const C = h => new THREE.Color(h);
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -199,7 +199,7 @@ const BRIGHT_FS = `uniform sampler2D tDiffuse; uniform vec3 defaultColor; unifor
     gl_FragColor=mix(vec4(defaultColor.rgb,defaultOpacity),vec4(c,1.0),a);
   }`;
 
-export const LOOK = { ng: true, glare: 1 }; // set from the player's settings (main.js)
+export const LOOK = { ng: true, glare: 1, glow: 1 }; // glare / glow: Settings → Glow & lens flare // set from the player's settings (main.js)
 export const ngActive = () => !!(LOOK.ng && Q.tier.bloom);
 
 export function createGfx(renderer, scene, camera) {
@@ -302,7 +302,8 @@ export function createGfx(renderer, scene, camera) {
       scene.environment = T.env === false ? null : roomEnv; scene.environmentIntensity = (A.envI ?? 0.6) * (ng ? 1.15 : 1); renderer.toneMappingExposure = A.exp ?? 1; st.exposure = A.exp ?? 1; }
     const bp = (A.bloom && A.bloom[tod]) || (A.outdoor ? P.bloom : [0.7, 0.5, 0.8]);
     if (bloom) { const s = bp[0] * (A.bloomI ?? 1); bloom.strength = s; bloom.radius = bp[1]; bloom.threshold = bp[2]; bloom.enabled = T.bloom && s > (Q.key === 'high' ? 0.05 : 0.2);
-      if (ng) { const n = tod === 'night' || !A.outdoor ? 1 : tod === 'sunset' ? 0.55 : 0; bloom.strength = s * (A.outdoor ? 1.05 : 0.72) + 0.04; bloom.threshold = A.outdoor ? THREE.MathUtils.lerp(1.6, bp[2], n) : Math.max(bp[2], 1.0); // indoors: lit white fabric must not glow, only lamps and neon
+      if (ng) { const n = tod === 'night' || !A.outdoor ? 1 : tod === 'sunset' ? 0.55 : 0; bloom.strength = (s * (A.outdoor ? 0.9 : 0.5) + 0.03) * LOOK.glow; bloom.threshold = A.outdoor ? THREE.MathUtils.lerp(1.6, bp[2], n) : Math.max(bp[2], 1.2); // indoors: only lamps and neon glow (lit floors, white walls and clothes must not)
+        if (!A.outdoor) bloom.radius = Math.min(bp[1], 0.4);
         bloom.highPassUniforms.skyCut.value = A.outdoor && tod === 'day' ? 1 : 0; bloom.enabled = T.bloom; } }
     if (post.fin) { const u = post.fin.uniforms, G2 = A.outdoor ? N : { warm: 0.06, sat: 1.1, vig: 0.28 }; u.warm.value = G2.warm; u.sat.value = G2.sat; u.vignette.value = G2.vig; u.contrast.value = A.outdoor ? 0.18 : 0.22;
       u.lift.value.set(0, 0.004, tod === 'night' ? 0.016 : 0.008); }
@@ -319,7 +320,7 @@ export function createGfx(renderer, scene, camera) {
     if (post.fin) { const u = post.fin.uniforms, A = st.area; u.exposure.value = st.exposure || 1; u.time.value = time % 100; u.aspect.value = innerWidth / innerHeight; u.tDepth.value = post.depth;
       let on = 0;
       if (A && A.outdoor && st.tod !== 'night' && sunDir.y > -0.02) { _sp.copy(sunDir).multiplyScalar(3000).add(camera.position).project(camera);
-        if (_sp.z < 1 && Math.abs(_sp.x) < 1.3 && Math.abs(_sp.y) < 1.3) { u.sunUV.value.set(_sp.x * 0.5 + 0.5, _sp.y * 0.5 + 0.5); on = THREE.MathUtils.smoothstep(sunDir.y, -0.02, 0.06) * (st.tod === 'sunset' ? 1.25 : 0.5); }
+        if (_sp.z < 1 && Math.abs(_sp.x) < 1.3 && Math.abs(_sp.y) < 1.3) { u.sunUV.value.set(_sp.x * 0.5 + 0.5, _sp.y * 0.5 + 0.5); on = THREE.MathUtils.smoothstep(sunDir.y, -0.02, 0.06) * (st.tod === 'sunset' ? 0.8 : 0.32); }
         u.sunColor.value.copy(sun.color); }
       u.sunOn.value = on * LOOK.glare;
       if (bloom && bloom.highPassUniforms.tDepth) bloom.highPassUniforms.tDepth.value = post.depth;

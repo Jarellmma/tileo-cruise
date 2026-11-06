@@ -1,20 +1,20 @@
 // TILEO KINGDOM: Strip Life, playable prototype (Three.js, no build step)
 import * as THREE from 'three';
-import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793745796';
-import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793745796';
-import { createGfx, LOOK } from './gfx.js?v=1793745796';
-import { createAmbience } from './ambience.js?v=1793745796';
-import { initCasino } from './casino.js?v=1793745796';
-import { initNet } from './net.js?v=1793745796';
-import { initCompanion } from './companion.js?v=1793745796';
-import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793745796';
-import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793745796';
-import { PEOPLE_BASES } from './people_data.js?v=1793745796';
-import { buildStrip, updateWaters } from './world.js?v=1793745796';
-import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793745796';
-import { buildLimo } from './limo.js?v=1793745796';
-import { initPhoto } from './photo.js?v=1793745796';
-import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793745796';
+import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1793979068';
+import { Q, initQuality, setMode, TIERS } from './quality.js?v=1793979068';
+import { createGfx, LOOK } from './gfx.js?v=1793979068';
+import { createAmbience } from './ambience.js?v=1793979068';
+import { initCasino } from './casino.js?v=1793979068';
+import { initNet } from './net.js?v=1793979068';
+import { initCompanion } from './companion.js?v=1793979068';
+import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1793979068';
+import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1793979068';
+import { PEOPLE_BASES } from './people_data.js?v=1793979068';
+import { buildStrip, updateWaters } from './world.js?v=1793979068';
+import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1793979068';
+import { buildLimo } from './limo.js?v=1793979068';
+import { initPhoto } from './photo.js?v=1793979068';
+import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1793979068';
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window; if (isTouch) document.body.classList.add('touch');
@@ -36,6 +36,9 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.25, Q.tier.far);
 scene.fog = new THREE.Fog(0x0a0820, 300, 1600);
 LOOK.ng = prefs.ng !== false; PEOPLE.on = prefs.people !== false;
+const GLOW = { soft: [0.65, 0.45], full: [1, 1], off: [0.22, 0] }; // [bloom, sun flare] per Settings → Glow & lens flare
+const applyGlow = () => { const v = GLOW[prefs.glow] || GLOW.soft; LOOK.glow = v[0]; LOOK.glare = v[1]; };
+applyGlow();
 const gfx = createGfx(renderer, scene, camera);
 gfx.st.onSlow = () => toast('Lighter effects: contact shadows turned off to keep the game smooth.');
 addEventListener('resize', () => gfx.resize());
@@ -44,7 +47,7 @@ buildTextures();
 // ---------- areas ----------
 const areas = {};
 function defArea(id, o) { const g = new THREE.Group(); g.visible = false; scene.add(g); return areas[id] = Object.assign({ id, group: g, rects: [], aabbs: [], interacts: [], anim: [], water: [], outdoor: false, ceiling: null }, o); }
-const ctx = { save, toast, checkIn, openShop, openSlots, openElevator, exitToStrip, drink, dailyBonus, roomDoor, leaveRoom, openWardrobe, vipBooth, requestTrack, openBlackjack, openRoulette, rlFast: false };
+const ctx = { save, toast, checkIn, openShop, openSlots, openElevator, exitToStrip, walkInto, drink, dailyBonus, roomDoor, leaveRoom, openWardrobe, vipBooth, requestTrack, openBlackjack, openRoulette, rlFast: false };
 const strip = defArea('strip', { label: 'Las Vegas Strip', outdoor: true, envI: 1, rects: [[-200, 200, -640, 640]], music: null }); buildStrip(strip);
 const lobby = defArea('lobby', { label: 'Tileo Kingdom · Lobby & Casino', envI: 0.6, hemi: 0.55, bloom: { day: [0.45, 0.4, 0.9], sunset: [0.45, 0.4, 0.9], night: [0.55, 0.45, 0.85] }, rects: [[-19.5, 19.5, -24.5, 24.5], [20.5, 69.5, -24.5, 24.5], [19, 21, -10.5, 10.5]], ceiling: 11.5, bbox: [-19.6, 69.6, -24.6, 24.6], music: 'lobby' }); buildLobby(lobby, ctx);
 const pool = defArea('pool', { label: 'Pool Deck · Rooftop', outdoor: true, envI: 1.1, rects: [[-59.5, 59.5, -49.5, 49.5]], music: 'pool' }); buildPool(pool, ctx);
@@ -96,6 +99,8 @@ function renderQualityUI() { const box = $('qualBtns'); if (!box) return; box.in
   $('qualInfo').textContent = `Rendering: ${Q.tier.name} · ${Q.tier.shadow ? 'soft shadows' : 'no shadows'} · ${Q.tier.bloom ? 'bloom' : 'no bloom'}${Q.tier.water ? ' · mirror water' : ''}${gfx.ng ? ' · Next-Gen' + (Q.tier.ao ? ' with contact shadows' : '') : ''}`;
   const lb = $('lookBtns'); if (lb) { lb.innerHTML = ''; for (const [v, n] of [[true, 'Next-Gen'], [false, 'Classic']]) { const b = document.createElement('button'); b.className = 'txt' + ((prefs.ng !== false) === v ? ' on' : ''); b.textContent = n;
     b.onclick = () => { prefs.ng = v; savePrefs(); gfx.setLook(v); applyEnv(); renderQualityUI(); }; lb.appendChild(b); }
+    const gb = $('glowBtns'); if (gb) { gb.innerHTML = ''; for (const [v, n] of [['soft', 'Soft'], ['full', 'Full'], ['off', 'Off']]) { const b = document.createElement('button'); b.className = 'txt' + ((prefs.glow || 'soft') === v ? ' on' : ''); b.textContent = n;
+      b.onclick = () => { prefs.glow = v; savePrefs(); applyGlow(); applyEnv(); renderQualityUI(); }; gb.appendChild(b); } }
     $('lookInfo').textContent = Q.tier.bloom ? 'Next-Gen: real sky and reflections, contact shadows, sun glare, film grade, selfie depth of field.' : 'Next-Gen needs Med or High quality.'; }
   const pb = $('peopleBtns'); if (pb) { pb.innerHTML = ''; for (const [v, n] of [[true, 'Realistic'], [false, 'Classic']]) { const b = document.createElement('button'); b.className = 'txt' + ((prefs.people !== false) === v ? ' on' : ''); b.textContent = n;
     b.onclick = () => { prefs.people = v; savePrefs(); setPeople(v); renderQualityUI(); if (state.ui === 'creator') buildCreator(state.wardrobe); }; pb.appendChild(b); } } }
@@ -257,14 +262,16 @@ function updateBand() { const L = save.look, c = L.banded ? BAND_C : '#555'; $('
 function inRect(p, r) { return p.x >= r[0] && p.x <= r[1] && p.z >= r[2] && p.z <= r[3]; }
 function nearest() { if (state.ride) return net && net.rideAction(); if (state.limo || state.cine) return null; if (state.area.id === 'strip') { if (state.driving) return { label: 'Exit car', act: exitCar };
     if (Math.hypot(player.position.x - car.position.x, player.position.z - car.position.z) < 4) return { label: 'Drive convertible', act: enterCar };
-    const d = strip.tileo; if (Math.hypot(player.position.x - (d.doorX - 3), player.position.z - d.doorZ) < 6) return { label: 'Enter TILEO KINGDOM', act: enterTower };
+    const d = strip.tileo; if (Math.hypot(player.position.x - (d.doorX - 3), player.position.z - d.doorZ) < 6) return { label: 'Enter TILEO KINGDOM', act: () => walkInto(d.doorX - 1.1, d.doorZ, enterTower) };
     if (!state.limo && Math.hypot(player.position.x - 17, player.position.z + 330) < 5) return { label: 'Hail the stretch limo 🚘', act: () => openHail(false) };
     const k = strip.needleKiosk; if (Math.hypot(player.position.x - k.x, player.position.z - k.z) < k.r) return { label: 'Ride the Sky Needle elevator ▲', act: () => needle.rideUp() };
     return (net && net.rideAction()) || comp.action(); }
   let best = null, bd = 1e9; for (const it of state.area.interacts) { const d = Math.hypot(player.position.x - it.x, player.position.z - it.z); if (d < it.r && d < bd) { bd = d; best = it; } } return best || comp.action(); }
 function doInteract() { if (state.ui || !state.started) return; const it = state.near; if (it) it.act(); }
-function enterTower() { transition(() => enterArea('lobby', lobby.spawnDoor.x, lobby.spawnDoor.z, lobby.spawnDoor.yaw)); }
-function exitToStrip() { transition(() => enterArea('strip', strip.tileo.doorX - 8, strip.tileo.doorZ, PI / 2)); }
+function enterTower() { if (state.walkTo) state.walkTo = null; if (state.entering) return; state.entering = true; setTimeout(() => { state.entering = false; }, 900); transition(() => enterArea('lobby', lobby.spawnDoor.x, lobby.spawnDoor.z, lobby.spawnDoor.yaw)); }
+// v6.3: walk yourself to a spot (through the opening glass doors), then carry on
+function walkInto(x, z, then) { if (tpBusy) return; state.walkTo = { x, z, then, t: 0 }; state.emote = null; }
+function exitToStrip() { if (state.walkTo) state.walkTo = null; if (state.entering) return; state.entering = true; setTimeout(() => { state.entering = false; }, 900); transition(() => enterArea('strip', strip.tileo.doorX - 8, strip.tileo.doorZ, PI / 2)); }
 function enterCar() { if (state.ride) return; state.driving = true; state.emote = null; toggleWheel(false); state.air = false; state.jy = 0; setTimeout(syncButtons); player.visible = true; state.carHeading = car.rotation.y; cam.dist = 11; toast('Convertible rented: W/S or joystick to drive, A/D to steer. Car radio on.'); setMusic(); }
 function exitCar() { state.driving = false; state.carSpeed = 0; const h = state.carHeading; player.position.set(car.position.x + Math.cos(h) * 2.2, 0, car.position.z - Math.sin(h) * 2.2); player.rotation.set(0, h, 0); cam.dist = 7; toggleLights(false); syncButtons(); setMusic(); }
 function checkIn() {
@@ -375,8 +382,11 @@ function update(dt, t) {
     const h = state.carHeading, v = state.carSpeed * dt, nx = car.position.x + Math.sin(h) * v, nz = car.position.z + Math.cos(h) * v;
     if (Math.abs(v) > 0 && carHit(nx, nz, h) && !carHit(car.position.x, car.position.z, h)) { if (Math.abs(state.carSpeed) > 2.5) amb.bump(Math.abs(state.carSpeed) / 14); state.carSpeed *= -0.25; }
     else if (!tryMove(car, Math.sin(h) * v, Math.cos(h) * v, 2.0)) state.carSpeed *= -0.3;
-    car.rotation.y = h; player.position.set(car.position.x + Math.cos(h) * 0.45 + Math.sin(h) * -0.4, 0.25, car.position.z - Math.sin(h) * 0.45 + Math.cos(h) * -0.4); /* driver's seat on the left */ player.rotation.y = h; animate(player, t, 0, 'drive'); state.pmode = 'drive';
+    car.rotation.y = h; player.position.set(car.position.x + Math.cos(h) * 0.45 + Math.sin(h) * -0.2, 0.25, car.position.z - Math.sin(h) * 0.45 + Math.cos(h) * -0.2); /* driver's seat on the left; back against the seat back */ player.rotation.y = h; animate(player, t, 0, 'drive'); state.pmode = 'drive';
     if (!cam.manual) cam.yaw += (angleWrap(h + PI - cam.yaw)) * Math.min(1, dt * 3);
+  } else if (state.walkTo) { const W = state.walkTo; W.t += dt; const dx = W.x - player.position.x, dz = W.z - player.position.z, d = Math.hypot(dx, dz);
+    if (d < 0.3 || W.t > 3) { state.walkTo = null; state.moving = 0; animate(player, t, 0, ''); W.then(); }
+    else { const sp = 3.4; player.position.x += dx / d * Math.min(d, sp * dt); player.position.z += dz / d * Math.min(d, sp * dt); player.rotation.y += angleWrap(Math.atan2(dx, dz) - player.rotation.y) * Math.min(1, dt * 10); state.moving = sp; animate(player, t, sp, ''); state.pmode = ''; }
   } else {
     const run = state.sprint || keys.ShiftLeft || keys.ShiftRight || Math.hypot(joy.x, joy.y) > 0.95; const sp = (run ? 11 : 6) * (waterDepth(player.position) > 0.7 ? 0.55 : 1);
     const fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw), rx = Math.cos(cam.yaw), rz = -Math.sin(cam.yaw);
@@ -394,9 +404,14 @@ function update(dt, t) {
   cam.manual = Math.max(0, (cam.manual || 0) - dt);
   // interact prompt
   const it = state.started && !state.ui ? nearest() : null; state.near = it; const lbl = it ? (typeof it.label === 'function' ? it.label() : it.label) : '';
-  $('btnAct').classList.toggle('hidden', !it); $('actLbl').textContent = lbl || 'Interact'; $('hint').textContent = it ? (isTouch ? `✋ ${lbl}` : `E · ${lbl}`) : ''; $('hint').classList.toggle('on', !!it);
+  $('btnAct').classList.toggle('hidden', !it); $('actLbl').textContent = lbl || 'Interact'; $('hint').textContent = it ? (isTouch ? `✋ ${lbl}` : `E · ${lbl}`) : ''; $('hint').classList.toggle('on', !!it && !isTouch);
   limo.update(dt, t); photo.pose();
   if (A.id === 'strip' && state.started && !state.limo && !state.cine) { let best = null, bd = 1e9; for (const l of strip.landmarks) { const d = Math.hypot(player.position.x - l.x, player.position.z - l.z); if (d < bd) { bd = d; best = l; } } $('areaName').textContent = `Las Vegas Strip · near ${best.name}${state.driving ? ' · 🚗 ' + Math.round(Math.abs(state.carSpeed) * 2.2) + ' mph' : ''}`; }
+  if (A.id === 'lobby' && lobby.exitDoors) { const D = lobby.exitDoors; D.want = Math.hypot(player.position.x, player.position.z - 22) < 7 || state.walkTo ? 1 : 0; // lobby glass doors, inside
+    if (D.k > 0.85 && !state.walkTo && state.moving > 0 && player.position.z > 23.2 && Math.abs(player.position.x) < 1.8 && Math.cos(player.rotation.y) > 0.5) exitToStrip(); }
+  if (A.id === 'strip') { const d = strip.tileo, D = d.doors; if (D) { // TILEO KINGDOM glass doors: open as you walk up; walking into the open doorway takes you inside
+      D.want = (!state.driving && !state.limo && !state.ride && Math.hypot(player.position.x - (d.doorX - 3), player.position.z - d.doorZ) < 8) || state.walkTo ? 1 : 0;
+      if (D.k > 0.85 && !state.walkTo && !tpBusy && state.moving > 0 && player.position.x > d.doorX - 1.9 && Math.abs(player.position.z - d.doorZ) < 2.8 && Math.sin(player.rotation.y) > 0.5) enterTower(); } }
   if (A.id === 'strip' || A.showStrip) { const B = strip.blockers || (strip.blockers = []); B.length = 0; B.push({ x: car.position.x, z: car.position.z, len: 2.4 });
     if (!state.driving && !state.limo && !state.ride && Math.abs(player.position.x) < 14.5 && A.id === 'strip') B.push({ x: player.position.x, z: player.position.z, len: 0.4, ped: true });
     if (net) for (const o of net.vehicles()) B.push(o); strip.onHonk = c => { const d = Math.hypot(c.x - player.position.x, c.z - player.position.z); if (d < 80) amb.honk(1 / (1 + d / 25)); }; }
@@ -419,13 +434,18 @@ function updateCamera(dt) {
   player.visible = !prefs.fp || cr;
   if (cr) { player.rotation.y = cam.yaw - 0.35; const d = 3.3, sx = innerWidth > 700 ? -0.75 : 0, rx = Math.cos(cam.yaw) * sx, rz = -Math.sin(cam.yaw) * sx;
     camTarget.set(p.x + rx, p.y + 1.05, p.z + rz); camPos.set(camTarget.x + Math.sin(cam.yaw) * d, camTarget.y + 0.25, camTarget.z + Math.cos(cam.yaw) * d);
+    if (innerHeight > innerWidth * 1.1) { // portrait: the panel is a bottom sheet, so aim low and the whole guest shows in the top half of the screen
+      const dp = 4.6, h = 1.15, f = Math.tan(camera.fov * PI / 360), at = Math.atan((0.9 - h) / dp) - Math.atan(0.5 * f);
+      camTarget.set(p.x, p.y + h + Math.tan(at) * dp, p.z); camPos.set(p.x + Math.sin(cam.yaw) * dp, p.y + h, p.z + Math.cos(cam.yaw) * dp); }
     camera.position.lerp(camPos, Math.min(1, dt * 10)); camera.lookAt(camTarget); CHAR.camPos.copy(camera.position); return; }
   if (prefs.fp) { const pitch = cam.pitch - 0.2, fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw), eye = p.y + (state.driving ? 1.12 : 1.62);
     camera.position.set(p.x + fx * 0.12, eye, p.z + fz * 0.12); fpDir.set(fx * Math.cos(pitch), -Math.sin(pitch), fz * Math.cos(pitch)).add(camera.position); camera.lookAt(fpDir); CHAR.camPos.copy(camera.position); return; } const d = cam.dist; camTarget.set(p.x, p.y + (state.driving ? 1.6 : 1.7) + (cam.lift || 0), p.z);
   camPos.set(p.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * d, camTarget.y + Math.sin(cam.pitch) * d, p.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * d);
   if (A.rects.length && !A.bbox) { let dd = d; const inA = () => A.rects.some(r => camPos.x > r[0] + 0.3 && camPos.x < r[1] - 0.3 && camPos.z > r[2] + 0.3 && camPos.z < r[3] - 0.3); // keep the camera on the walkable deck (e.g. not behind the pool elevator wall)
     for (let k = 0; k < 10 && dd > 1.6 && !inA(); k++) { dd *= 0.82; camPos.x = p.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * dd; camPos.z = p.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * dd; } }
-  if (A.bbox) { camPos.x = Math.min(A.bbox[1] - 0.3, Math.max(A.bbox[0] + 0.3, camPos.x)); camPos.z = Math.min(A.bbox[3] - 0.3, Math.max(A.bbox[2] + 0.3, camPos.z)); }
+  if (A.bbox) { const Bx = A.bbox, mg = 0.9; let dd = d; const inB = () => camPos.x > Bx[0] + mg && camPos.x < Bx[1] - mg && camPos.z > Bx[2] + mg && camPos.z < Bx[3] - mg; // pull in toward the guest instead of pressing against a wall
+    for (let k = 0; k < 12 && dd > 1.4 && !inB(); k++) { dd *= 0.85; camPos.x = p.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * dd; camPos.z = p.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * dd; }
+    camPos.x = Math.min(A.bbox[1] - 0.3, Math.max(A.bbox[0] + 0.3, camPos.x)); camPos.z = Math.min(A.bbox[3] - 0.3, Math.max(A.bbox[2] + 0.3, camPos.z)); }
   if (A.ring) { const R = A.ring; let dd = d; const rr = () => Math.hypot(camPos.x - R.cx, camPos.z - R.cz); // keep the camera off the elevator core and inside the railing
     for (let k = 0; k < 12 && dd > 1.2 && (rr() < R.r0 + 0.6 || rr() > R.r1 + 1.2); k++) { dd *= 0.82; camPos.x = p.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * dd; camPos.z = p.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * dd; }
     if (rr() < R.w1 + 0.2) camPos.y = Math.min(R.ceil, camPos.y); }

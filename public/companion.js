@@ -2,7 +2,7 @@
 // Your guest follows you between places, rides in the convertible's passenger seat and on the limo's J-seat,
 // dances when you dance, and goes back to what they were doing when you say goodbye.
 import * as THREE from 'three';
-import { CHAR, makeCharacter, animate } from './characters.js?v=1793745796';
+import { CHAR, makeCharacter, animate } from './characters.js?v=1793979068';
 
 const NAMES = { f: ['Mia', 'Jasmine', 'Sofia', 'Aaliyah', 'Chloe', 'Nia', 'Valentina', 'Zoe', 'Imani', 'Lena', 'Brianna', 'Camila'],
   m: ['Marcus', 'Diego', 'Andre', 'Liam', 'Malik', 'Jalen', 'Rafael', 'Noah', 'Darius', 'Leo', 'Isaiah', 'Mateo'] };
@@ -14,7 +14,7 @@ export function initCompanion(G) {
   const { state, player } = G, v = new THREE.Vector3(), w = new THREE.Vector3();
   let C = null; // { ch, orig, name, area, seat }
   let scanT = 0, cand = null;
-  const PASS = new THREE.Vector3(-0.45, 0.25, -0.4); // convertible passenger seat (the car's right side; +x is its left)
+  const PASS = new THREE.Vector3(-0.45, 0.25, -0.2); // convertible passenger seat (the car's right side; +x is its left)
 
   // a guest you can invite: visible, nearby, not the player / another player / staff
   function scan() {

@@ -2,10 +2,10 @@
 // The route runs south on the east lanes, U-turns, north on the west lanes, U-turns, and repeats.
 // Local frame: +z forward, -x is the curb side, the floor is at y 0.36.
 import * as THREE from 'three';
-import { M, neon, glow, goldM, chromeM, onNight, logoPlane, canvas, tex, PI } from './core.js?v=1793745796';
-import { Batch, streetTex } from './city.js?v=1793745796';
-import { makeCharacter, animate } from './characters.js?v=1793745796';
-import { wheelParts } from './cars.js?v=1793745796';
+import { M, neon, glow, goldM, chromeM, onNight, logoPlane, canvas, tex, PI } from './core.js?v=1793979068';
+import { Batch, streetTex } from './city.js?v=1793979068';
+import { makeCharacter, animate } from './characters.js?v=1793979068';
+import { wheelParts } from './cars.js?v=1793979068';
 
 const XL = 12.4, ZE = 615, RA = 12.4, ARC = PI * RA, LEN = 4 * ZE + 2 * ARC; // loop length is about 2538 m
 const SEG = [2 * ZE, 2 * ZE + ARC, 4 * ZE + ARC, LEN];
@@ -17,9 +17,9 @@ export function routeAt(s) { s = ((s % LEN) + LEN) % LEN;
 // arc length along the route for a curbside point (the side is picked from x)
 export function routeS(x, z) { return x >= 0 ? ZE - z : SEG[1] + (z + ZE); }
 const PICKUP_S = routeS(1, -330);
-const SEAT = new THREE.Vector3(0.05, 0.36, -3.38), STAND = new THREE.Vector3(0.0, 0.84, -0.8);
+const SEAT = new THREE.Vector3(0.05, 0.33, -3.38), STAND = new THREE.Vector3(0.0, 0.84, -0.8);
 // passenger places on the J-seat along the curb side (facing in): your invited guest and other players riding with you
-export const J_SEATS = [new THREE.Vector3(-0.66, 0.36, -2.3), new THREE.Vector3(-0.66, 0.36, -1.3), new THREE.Vector3(-0.66, 0.36, -0.3)];
+export const J_SEATS = [new THREE.Vector3(-0.44, 0.33, -2.3), new THREE.Vector3(-0.44, 0.33, -1.3), new THREE.Vector3(-0.44, 0.33, -0.3)]; // v6.3: hips over the cushion, back to the backrest (was inside the wall)
 const DRV_LOOK = { skin: '#8a5636', hair: '#1a1209', outfit: '#111111', style: 'solid', hairLong: false, body: 'm', hairStyle: 'buzzed', beard: false, banded: false, role: 'business' }; // chauffeur in a suit
 const VIEWS = ['cabin', 'seat', 'chase', 'side'];
 const VNAME = { cabin: 'Rear cabin', seat: 'Rear-seat POV', chase: 'Chase cam', side: 'Curbside', roof: 'Sunroof' };
@@ -63,7 +63,7 @@ export function buildLimo(strip, C) {
     for (const z of [3.72, -3.9]) for (const s of [-1, 1]) { b.geo(rubber, W.tyre, s * 0.95, 0.38, z, s, 1, 1); b.geo(alloy, W.rim, s * 0.95, 0.38, z, s, 1, 1); b.geo(gold, new THREE.CylinderGeometry(0.05, 0.05, 0.03, 10).rotateZ(PI / 2), s * 1.07, 0.38, z); } }
   // ---- interior ----
   b.box(carpet, 0, 0.26, -0.6, 1.98, 0.1, 7.6);
-  b.box(leather, 0, 0.36, -3.55, 1.96, 0.42, 0.72); b.box(leather, 0, 0.72, -3.97, 1.96, 0.78, 0.2); b.box(gold, 0, 0.77, -3.18, 1.96, 0.02, 0.02); // rear bench
+  b.box(leather, 0, 0.36, -3.66, 1.96, 0.42, 0.5); b.box(leather, 0, 0.72, -3.97, 1.96, 0.78, 0.2); b.box(gold, 0, 0.77, -3.4, 1.96, 0.02, 0.02); // rear bench (0.5 m deep so knees clear the front edge)
   for (const x of [-0.5, 0.5]) b.box(leather, x, 1.38, -3.98, 0.5, 0.22, 0.16);
   b.box(leather, -0.74, 0.36, -1.2, 0.48, 0.38, 3.3); b.box(leather, -0.95, 0.72, -1.2, 0.08, 0.52, 3.3); b.box(gold, -0.5, 0.74, -1.2, 0.02, 0.02, 3.3); // J-seat
   b.box(lacquer, 0.78, 0.36, -1.1, 0.42, 0.6, 2.5); b.box(gold, 0.78, 0.96, -1.1, 0.44, 0.03, 2.52); b.box(led, 0.565, 0.9, -1.1, 0.02, 0.03, 2.5); // mini bar

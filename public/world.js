@@ -1,12 +1,12 @@
 // The Strip: road, sidewalks, parody lookalike landmarks (procedural PBR architecture), Tileo Kingdom tower
 import * as THREE from 'three';
 import { Water } from 'three/addons/objects/Water.js';
-import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, chromeM, canvas, tex, logoMaterial, logoReady, LOGOS , pbr } from './core.js?v=1793745796';
-import { makeLion, makeCharacter, randomLook, animate } from './characters.js?v=1793745796';
-import { STY, facade, roofMat, rect, circle, arcBand, stadium, inset, Batch, streetTex, palms as palmKit, carKitGeo } from './city.js?v=1793745796';
-import { carParts, carMats } from './cars.js?v=1793745796';
-import { buildGrounds } from './landscape.js?v=1793745796';
-import { Q } from './quality.js?v=1793745796';
+import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, chromeM, canvas, tex, logoMaterial, logoReady, LOGOS , pbr } from './core.js?v=1793979068';
+import { makeLion, makeCharacter, randomLook, animate } from './characters.js?v=1793979068';
+import { STY, facade, roofMat, rect, circle, arcBand, stadium, inset, Batch, streetTex, palms as palmKit, carKitGeo } from './city.js?v=1793979068';
+import { carParts, carMats } from './cars.js?v=1793979068';
+import { buildGrounds } from './landscape.js?v=1793979068';
+import { Q } from './quality.js?v=1793979068';
 
 export function facadeMat(color, w, h, d, lit = 0xffd98f, nightI = 1) {
   const mk = (rx) => { const m = new THREE.MeshStandardMaterial({ color, map: rep(T.facade, rx / 6, h / 5), emissive: lit, emissiveMap: rep(T.facadeE, rx / 6, h / 5), emissiveIntensity: nightI, roughness: 0.55, metalness: 0.2 });
@@ -503,8 +503,30 @@ function buildTileo(A, solid, sign, pb) {
   for (const [bx, bz, br] of [[cx - 18.75, cz, -PI / 2], [cx, cz + 20.75, 0]]) logoPlane(g, 'dj', bx, 95, bz, 30, br, { back: 0x0b0906, pad: 0.1 });
   const crestLight = new THREE.PointLight(0xffb030, 0, 90, 1.2); crestLight.position.set(cx - 25, 215, cz); g.add(crestLight); onNight(n => crestLight.intensity = n ? 40 : 0);
   // entrance: doors, canopy, lion statues
-  b.box(glow(0x6a4a24, 0xb07a34, 0.1, 0.45), cx - 25.3, 0, cz, 0.4, 7, 12); b.box(gold, cx - 25.4, 7, cz, 0.6, 0.6, 13);
-  b.box(gold, 64, 8, cz, 20, 0.8, 26); b.box(goldLED, 64, 7.85, cz, 19.4, 0.12, 25.4); for (const zz of [-12, 12]) for (const xx of [56, 70]) b.cyl(gold, xx, 0, cz + zz, 0.4, 8, 12);
+  // v6.3: sliding glass doors in gold frames with the warm lobby behind the glass; they slide open as you walk up (A.tileo.want, set by main.js)
+  const doors = { k: 0, want: 0, leaves: [] };
+  { const X = cx - 25.3, DH = 3.4, TOP = 7;
+    const glassM = new THREE.MeshPhysicalMaterial({ color: 0xb8c8d0, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.3, envMapIntensity: 1.5, depthWrite: false, side: THREE.DoubleSide });
+    b.box(glow(0x241508, 0x7a4c1c, 0.05, 0.3), X + 0.12, 0, cz, 0.06, TOP, 11.8); // the lobby, seen through the glass (kept under the bloom threshold)
+    for (const dz of [-3.6, 0, 3.6]) b.box(glow(0x3a2610, 0xc08a40, 0.05, 0.6), X + 0.08, 4.7, cz + dz, 0.02, 0.45, 1.5); // chandeliers inside
+    b.box(M(0x2a2018, { roughness: 0.35, metalness: 0.2 }), X + 0.06, 0, cz, 0.04, 0.9, 11.8); // reception desk silhouette
+    const pane = (w, h) => new THREE.Mesh(new THREE.PlaneGeometry(w, h).rotateY(-PI / 2), glassM);
+    for (const s of [-1, 1]) { const m = pane(2.9, DH - 0.12); m.position.set(X - 0.12, DH / 2, cz + s * 4.5); g.add(m); } // fixed side lights
+    { const m = pane(11.8, TOP - DH - 0.14); m.position.set(X - 0.12, DH + (TOP - DH) / 2, cz); g.add(m); } // transom
+    b.box(gold, X - 0.12, 0, cz, 0.22, 0.1, 12); b.box(gold, X - 0.12, DH - 0.07, cz, 0.24, 0.14, 12);
+    for (const zz of [-6, -3, 3, 6]) b.box(gold, X - 0.12, 0, cz + zz, 0.2, TOP, 0.14);
+    for (const zz of [-2, 2]) b.box(gold, X - 0.12, DH, cz + zz, 0.16, TOP - DH, 0.1);
+    for (const s of [-1, 1]) { const leaf = new THREE.Group(); leaf.position.set(X - 0.28, 0, cz + s * 1.5); g.add(leaf);
+      const gp = pane(2.88, DH - 0.16); gp.position.y = DH / 2; leaf.add(gp);
+      for (const [dz, w, y, h] of [[-1.47, 0.07, 0, DH], [1.47, 0.07, 0, DH], [0, 3.0, 0, 0.08], [0, 3.0, DH - 0.1, 0.08]]) { const fm = new THREE.Mesh(G.box, gold); fm.scale.set(0.06, h, w); fm.position.set(0, y + h / 2, dz); leaf.add(fm); }
+      const bar = new THREE.Mesh(G.box, gold); bar.scale.set(0.05, 1.4, 0.05); bar.position.set(-0.08, 1.05, -s * 1.25); leaf.add(bar);
+      doors.leaves.push({ leaf, z0: cz + s * 1.5, s }); }
+    A.anim.push((t, dt = 0.016) => { doors.k += Math.max(-dt * 1.6, Math.min(dt * 1.6, doors.want - doors.k)); const e = doors.k * doors.k * (3 - 2 * doors.k);
+      for (const L of doors.leaves) L.leaf.position.z = L.z0 + L.s * 2.95 * e; }); }
+  b.box(gold, cx - 25.4, 7, cz, 0.6, 0.6, 13);
+  // canopy: dark coffered ceiling with spot downlights (the old all-gold glowing ceiling washed the entrance out)
+  b.box(gold, 64, 8, cz, 20, 0.8, 26); b.box(M(0x2a1f12, { roughness: 0.6, metalness: 0.4 }), 64, 7.86, cz, 19.4, 0.12, 25.4);
+  { const dl = neon(0xffe3b8, {}, 0.2, 1.0); for (let i = 0; i < 4; i++) for (let j = 0; j < 5; j++) b.box(dl, 56.5 + i * 5, 7.83, cz - 10 + j * 5, 0.8, 0.03, 0.8); } for (const zz of [-12, 12]) for (const xx of [56, 70]) b.cyl(gold, xx, 0, cz + zz, 0.4, 8, 12);
   const canLight = new THREE.PointLight(0xffd090, 0, 30, 1.5); canLight.position.set(64, 6.5, cz); g.add(canLight); onNight(n => canLight.intensity = n ? 22 : 0);
   // entrance sign: resort logo over the canopy, flanked by name panels
   b.box(black, cx - 23.6, 17, cz, 0.5, 12, 11.5); b.box(gold, cx - 23.6, 29, cz, 0.7, 0.5, 12);
@@ -533,5 +555,5 @@ function buildTileo(A, solid, sign, pb) {
   onNight(n => beams.forEach(([bm]) => bm.visible = n));
   A.anim.push(t => beams.forEach(([bm, a, c], i) => { bm.rotation.set(0.32 * Math.sin(t * 0.45 + i * 1.7) + 0.18 * c, 0, 0.32 * Math.cos(t * 0.38 + i) - 0.18 * a, 'XYZ'); }));
   A.landmarks.push({ name: 'TILEO KINGDOM', x: cx, z: cz });
-  A.tileo = { doorX: cx - 25, doorZ: cz };
+  A.tileo = { doorX: cx - 25, doorZ: cz, doors };
 }
