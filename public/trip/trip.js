@@ -3,12 +3,12 @@
 // earn Trip Cash with skill jobs, find your wallet, look after your bestie and rack up Fun before Day 5 checkout.
 // Loaded only when the player picks the trip on the 18+ gate (or ?mode=trip). main.js swaps its save object to the trip's own key first,
 // so everything here (coins = Trip Cash, look, outfits) lives in 'tileoKingdom.trip.v1' and Free Play is never touched.
-import { START_MIN, END_MIN, SPEEDS, TRIP_TYPES, BACKSTORIES, BESTIES, OUTFITS, ACCESSORIES, ITEMS, VENUES, WISHES, WISH_SETS, BESTIE_WISH, WANDER, BLACKOUTS, WAKE_SPOTS, BOUNCER, LIFEGUARD, RANKS, REVUE, STASH_FX } from './data.js?v=1794000555';
-import { djGig, bartend } from './games.js?v=1794000555';
-import { buildTripWorld, SPOTS } from './world.js?v=1794000555';
-import { createBestie, moodFace } from './bestie.js?v=1794000555';
-import { createLocals, LOCALS, INTERESTS } from './locals.js?v=1794000555';
-import { createSocial } from './social.js?v=1794000555';
+import { START_MIN, END_MIN, WALLET0, WALLET_BACK, AIRPORT_BY, FLIGHT_AT, EXTEND_COST, EXTEND_MAX, SPEEDS, TRIP_TYPES, BACKSTORIES, BESTIES, OUTFITS, ACCESSORIES, ITEMS, VENUES, WISHES, WISH_SETS, BESTIE_WISH, WANDER, BLACKOUTS, WAKE_SPOTS, BOUNCER, LIFEGUARD, RANKS, REVUE, STASH_FX } from './data.js?v=1794015301';
+import { djGig, bartend } from './games.js?v=1794015301';
+import { buildTripWorld, SPOTS } from './world.js?v=1794015301';
+import { createBestie, moodFace } from './bestie.js?v=1794015301';
+import { createLocals, LOCALS, INTERESTS } from './locals.js?v=1794015301';
+import { createSocial } from './social.js?v=1794015301';
 
 const clamp = v => Math.max(0, Math.min(100, v)), pick = a => a[Math.random() * a.length | 0], $$ = n => '$' + Math.round(n).toLocaleString();
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -40,14 +40,16 @@ export async function initTrip(G) {
   { const grid = document.querySelector('#phone .appGrid'); if (grid) { const b = el('button', '', '✈️<span>My trip</span>'); b.onclick = () => { G.closeUI(); openHub(); }; grid.prepend(b); } }
 
   // ---------------- state ----------------
-  let T = save.trip && save.trip.v === 1 ? save.trip : null, bestie = null, world = null, busy = false, showT = -1, saveT = 0, hudT = 0, lastArea = '', zeroOpen = false, guardT = 0, dry = { x: 0, z: 0 };
+  let hudT2 = 0, T = save.trip && save.trip.v === 1 ? save.trip : null, bestie = null, world = null, busy = false, showT = -1, saveT = 0, hudT = 0, lastArea = '', zeroOpen = false, guardT = 0, dry = { x: 0, z: 0 };
   const day = () => Math.floor(T.min / 1440) + 1, hour = () => (T.min % 1440) / 60;
   const clock = (m = T.min) => { const h = (m % 1440) / 60, hh = Math.floor(h), mm = Math.floor((h - hh) * 60); return `${(hh + 11) % 12 + 1}:${String(mm).padStart(2, '0')} ${hh < 12 ? 'AM' : 'PM'}`; };
   const speedLbl = () => T.speed === 0.5 ? '½×' : T.speed + '×';
   const todFor = h => (h >= 5.5 && h < 6.75) || (h >= 17.5 && h < 19.75) ? 'sunset' : h >= 6.75 && h < 17.5 ? 'day' : 'night';
   const BK = () => BACKSTORIES[T.back], top = () => T.back === 'party' ? 78 : 68;
   const running = () => !!T && !T.ended && state.started;
-  const arriving = () => !!(T && T.arr && !T.arr.done); // v8: the clock waits while you land, grab your bag and ride up the Strip
+  const arriving = () => !!(T && T.arr && !T.arr.done);
+  // v8.1: the flight home (Day 5 + extra nights): hotel checkout at noon, airport by 3 PM, wheels up at 4 PM
+  const lastDay = () => 5 + (T.extra || 0), checkoutMin = () => END_MIN + (T.extra || 0) * 1440, walletGone = () => T.theft === undefined || T.theft === 2; // v8: the clock waits while you land, grab your bag and ride up the Strip
   const clockRuns = () => running() && !busy && !state.tripShow && (!state.ui || RUN_UI.has(state.ui)) && !arriving();
   const persist = () => { if (T) { T.savedAt = Date.now(); G.persist(); } };
 
@@ -87,7 +89,8 @@ export async function initTrip(G) {
   function advance(mins, act = '') { let left = mins; while (left > 0 && !T.ended) { const s = Math.min(left, 10), prev = T.min; T.min += s; left -= s; tick(s / 60, act); timeEvents(prev, T.min, !!act); } }
   function timeEvents(a, b, jumping) {
     const cross = hm => { for (let d = Math.floor(a / 1440); d <= Math.floor(b / 1440); d++) { const x = d * 1440 + hm; if (a < x && b >= x) return d + 1; } return 0; };
-    let d; if ((d = cross(0))) { if (d <= 5) dayBanner(`DAY ${d}`, d === 5 ? 'Checkout at 12:00 PM' : 'Midnight on the Strip'); }
+    let d; if ((d = cross(0))) { if (d <= lastDay()) dayBanner(`DAY ${d}`, d === lastDay() ? 'Checkout 12 PM · flight home 4 PM' : 'Midnight on the Strip'); }
+    if (!T.dep && T.flightTxt !== lastDay() && b >= checkoutMin() - 180) { T.flightTxt = lastDay(); text('Budget Air', `Your flight home leaves Day ${lastDay()} at 4:00 PM. Hotel checkout is noon; be at Sin City International by 3:00 PM (or extend your stay at the front desk). ✈️`); }
     if (cross(5 * 60) && locals) locals.disband();
     if (cross(6 * 60) && T.overdid) { T.overdid = false; T.hangover = true; G.toast('🤕 Morning hangover: Energy and Vibe drain faster until you drink water or a Recovery Smoothie.'); }
     if (bestie && bestie.lost && cross(7 * 60)) bestie.comeHome(15, `found my way back to the suite. why is there a traffic cone in our tub. also: thanks for nothing 🙃`);
@@ -95,7 +98,8 @@ export async function initTrip(G) {
     if (day() >= 4 && hour() >= 9 && T.quest.suitcase === 0) { T.quest.suitcase = 1; text('Budget Air', 'Great news! Your lost bag has arrived at the TILEO KINGDOM front desk. (It went to Boise. It had a nice time.) 🧳'); }
     if (bestie && !jumping && !bestie.lost && T.bf.wanderNight !== day() && hour() >= 1 && hour() < 3.5 && state.area.id !== 'room' && !state.driving && !state.limo && !state.cine && !state.ride && G.comp.active) {
       const p = (T.bf.buzz > 55 ? 0.05 : 0.008) * (b - a); if (Math.random() < p) { T.bf.wanderNight = day(); const spots = Object.keys(WANDER).filter(k => WANDER[k].area !== state.area.id); bestie.wander(pick(spots.length ? spots : Object.keys(WANDER))); } }
-    if (b >= END_MIN && !T.ended) endTrip('checkout');
+    if (!T.ended && !T.dep && b >= checkoutMin()) startDeparture(checkoutMin() + AIRPORT_BY, 'checkout');
+    if (!T.ended && T.dep && !T.dep.missed && !T.dep.done && b >= T.dep.by) missedFlight();
     const tod = todFor(hour()); if (tod !== state.tod) G.setTod(tod);
   }
   function jump(hours, act, msg, after) { busy = true; G.closeUI(); G.transition(() => { advance(hours * 60, act); if (after) after(); busy = false; hudNow(); if (msg) G.toast(msg); if (T.m.energy <= 0 && !T.ended) setTimeout(blackout, 600); persist(); }); }
@@ -127,11 +131,12 @@ export async function initTrip(G) {
     if (it.cure && T.hangover) { T.hangover = false; msg += ' · hangover cured! 🙌'; }
     const tacos2 = as === 'tacos' && hour() < 4;
     if (it.fun) addFun(it.fun * splurge * (tacos2 ? 2 : 1));
-    if (two && bestie) { bestie.feed(it); bestie.react(as === 'tacos' ? 'tacos' : as === 'steak' ? 'steak' : as === 'marg' ? 'marg' : 'drink'); }
+    if (two && bestie) { bestie.feed(it); bestie.react(as === 'tacos' ? 'tacos' : as === 'steak' ? 'steak' : as === 'marg' ? 'marg' : it.booze ? 'drink' : 'food'); }
     if (as === 'steak') { wish('steak'); if (two) wish('steak2'); }
     if (two && (as === 'cocktail' || as === 'marg') && venue === 'Tiger Bar') wish('shots');
     if (tacos2 && bestie && bestie.present()) wish('tacos2am');
     if (it.booze && T.m.buzz > top()) msg += ' · 🥴 too much!';
+    if (it.hours && it.msg) return jump(it.hours, 'eat', it.msg + (two ? ` (with ${bestie.B.n})` : ''));
     if (it.hours) return jump(it.hours, 'eat', `🥩 Dinner at the Lion's Den${two ? ` with ${bestie.B.n}` : ''}: perfectly charred, ridiculously huge. Hunger maxed.`);
     G.toast(msg); persist(); openVenue(venue); }
 
@@ -150,6 +155,7 @@ export async function initTrip(G) {
     if (!T.accOwned.length && T.closet.length < 2) list.append(el('p', 'fine', 'Just the plane clothes so far. Tiger Boutique is in the lobby.')); }
   function clubBlock() { const t = OUTFITS[T.wearing].tier; return t === 'plane' ? 'plane' : t === 'casual' ? 'casual' : t === 'swim' ? 'swim' : T.m.fresh < 30 ? 'stale' : null; }
   function canEnter(area) { if (!running()) return true;
+    if ((area === 'rooms' || area === 'room') && T.dep && !T.dep.done) { G.toast('🛎️ You checked out: your bags are at the bell desk. Extend your stay at the front desk to get the suite back.'); return false; }
     if (area === 'club') { const why = clubBlock(); if (why) { dlg({ title: '🚫 Velvet rope', html: `<p>${pick(BOUNCER[why])}</p><p class="fine">${why === 'stale' ? 'Freshness under 30%: take a hot shower in Suite 2407 (Floor 24).' : 'The Mega Club needs a party fit: Squad, White Party, Tiger Set or Gold Sequin. Tiger Boutique is in the lobby; your wardrobe is in Suite 2407.'}</p>`, buttons: [['Got it', null, 'gold']] }); return false; }
       setTimeout(() => G.toast(pick(['Bouncer: "Looking sharp. Go on in."', 'Bouncer: "Now THAT is a fit. Welcome to the Mega Club."', 'Bouncer: "You may pass, fashion royalty."'])), 900); }
     return true; }
@@ -212,14 +218,18 @@ export async function initTrip(G) {
 
   // ---------------- wallet quest, suitcase, front desk ----------------
   function onClue(n) { if (!running()) return;
-    if (n === 0) dlg({ title: '🕵️ Lobby Security', html: '<p>"A guy in a <b>flamingo-pink jacket</b> speed-walked through here this morning with way too many wallets. Kept asking where the roulette pit was."</p><p class="fine">Next: ask the pit boss by the roulette wheel in the casino.</p>', buttons: [['Thanks!', () => { if (T.quest.wallet !== 0) return; T.quest.wallet = 1; addFun(50); text('Wallet trail', 'Clue 1 of 3: flamingo-pink jacket, headed for the roulette pit. 🦩'); }, 'gold']] });
+    if (n === 0) dlg({ title: '🕵️ Lobby Security', html: '<p>"I saw him lift it! A guy in a <b>flamingo-pink jacket</b>, way too many wallets in that jacket. He kept asking where the roulette pit was."</p><p class="fine">Next: ask the pit boss by the roulette wheel in the casino.</p>', buttons: [['Thanks!', () => { if (T.quest.wallet !== 0) return; T.quest.wallet = 1; addFun(50); text('Wallet trail', 'Clue 1 of 3: flamingo-pink jacket, headed for the roulette pit. 🦩'); }, 'gold']] });
     else if (n === 1) dlg({ title: '🎰 Pit Boss', html: '<p>"Flamingo jacket? He tried to tip me with a wallet that wasn\'t his. Said he\'d be watching the <b>Bellissimo Fountains</b> show \'like a classy guy\'."</p><p class="fine">Next: the Bellissimo Fountains on the Strip (🌀 Teleport → Bellissimo Fountains).</p>', buttons: [['On it', () => { if (T.quest.wallet !== 1) return; T.quest.wallet = 2; addFun(50); if (world) world.npcs.pick.visible = true; text('Wallet trail', 'Clue 2 of 3: he\'s at the Bellissimo Fountains. Go get your wallet! ⛲'); }, 'gold']] }); }
-  function confront() { dlg({ title: '🦩 Gotcha!', html: '<p>The man in the flamingo jacket freezes mid-churro. "Okay, OKAY. I only took it because it matched my jacket!" He hands it over… along with a coupon for a free churro.</p>', buttons: [['💼 Take back your wallet', () => { if (T.quest.wallet !== 2) return; T.quest.wallet = 3; earn(120); addFun(300, 'Wallet recovered', true); if (world) world.npcs.pick.visible = false; G.toast('💼 Wallet recovered: +$120 and your dignity (mostly).'); persist(); }, 'gold']] }); }
-  function frontDesk() { if (!T) return G.toast('Front desk: "Welcome to TILEO KINGDOM."'); const B = [];
+  function confront() { dlg({ title: '🦩 Gotcha!', html: '<p>The man in the flamingo jacket freezes mid-churro. "Okay, OKAY. I only took it because it matched my jacket!" He hands it over… lighter than you remember (he "invested" in the craps table), plus a coupon for a free churro.</p>', buttons: [['💼 Take back your wallet', () => { if (T.quest.wallet !== 2) return; T.quest.wallet = 3; const back = T.walletBack = Math.min(WALLET_BACK, T.walletLost ?? 120); earn(back); addFun(300, 'Wallet recovered', true); if (world) world.npcs.pick.visible = false; G.toast(`💼 Wallet recovered: ${$$(back)} left inside, and your dignity (mostly).`); persist(); }, 'gold']] }); }
+  function conciergeCheckIn() { const two = bestie && bestie.present();
+    dlg({ title: '🛎️ Concierge · welcome to TILEO KINGDOM', html: `<p>"Welcome, ${esc(save.look.name)}! Suite 2407 on Floor 24 is all yours, prepaid. Here's your Kingdom wristband${two ? ` and one for ${esc(bestie.B.n)}` : ''}."</p><p>"Leave the bags with me: our bellman will take them straight up to your suite."</p>`,
+      buttons: [['🔑 Check in', () => { if (G.arrival) G.arrival.concierge(); }, 'gold']] }); }
+  function frontDesk() { if (!T) return G.toast('Front desk: "Welcome to TILEO KINGDOM."'); if (G.arrival && G.arrival.active) return conciergeCheckIn(); const B = [];
     if (running() && T.quest.suitcase === 1) B.push(['🧳 Pick up your lost suitcase', () => { if (T.quest.suitcase !== 1) return; T.quest.suitcase = 2; earn(40); if (!T.closet.includes('tiger')) T.closet.push('tiger'); addFun(100); dlg({ title: '🧳 It\'s back!', html: '<p>Your suitcase is here, slightly damp and covered in Boise stickers. Inside: a <b>$40 airline voucher</b> and, somehow, a brand-new <b>Signature Tiger-Print Statement Set</b>.</p>', buttons: [['👕 Wear the Tiger Set', () => wear('tiger'), 'gold'], ['Later']] }); return false; }, 'gold']);
     B.push(['🔑 My keycard', () => { G.closeUI(); setTimeout(() => G.ctxOrig.checkIn(), 50); return false; }]);
-    if (running()) B.push(['✈️ Early checkout', () => { dlg({ title: '✈️ Early checkout?', html: '<p>This ends your trip now and scores it. Sure?</p>', buttons: [['Check out now', () => { setTimeout(() => endTrip('early'), 50); }, 'gold'], ['Stay']] }); return false; }]);
-    B.push(['Close']); dlg({ title: '🛎️ Front desk · Suite 2407', html: `<p class="fine">Prepaid VIP suite on Floor 24 · ${running() ? `Day ${day()} · ${clock()} · checkout Day 5, 12:00 PM` : 'trip over · roam as long as you like'}</p>`, buttons: B }); }
+    if (running() && (T.extra || 0) < EXTEND_MAX && !(T.dep && T.dep.missed)) B.push([`🗓️ Stay one more night (${$$(EXTEND_COST)}, flight moved)`, () => { extendStay(); }]);
+    if (running() && !T.dep) B.push(['✈️ Early checkout', () => { dlg({ title: '✈️ Early checkout?', html: `<p>Budget Air moves you to this afternoon's flight: your bags come down to the bell desk and you have <b>3 hours</b> to get to Sin City International.</p>`, buttons: [['Check out now', () => { setTimeout(() => startDeparture(T.min + AIRPORT_BY, 'early'), 50); }, 'gold'], ['Stay']] }); return false; }]);
+    B.push(['Close']); dlg({ title: '🛎️ Front desk · Suite 2407', html: `<p class="fine">Prepaid VIP suite on Floor 24 · ${running() ? `Day ${day()} · ${clock()} · ${T.dep ? `checked out · airport by ${clock(T.dep.by)}` : `checkout Day ${lastDay()}, 12:00 PM · flight 4:00 PM`}` : 'trip over · roam as long as you like'}</p>`, buttons: B }); }
 
   // ---------------- $0 rule, blackout ----------------
   function zeroCheck() { if (busy || zeroOpen) return; const c = save.coins;
@@ -263,12 +273,12 @@ export async function initTrip(G) {
     const meters = METERS.map(([k, i, n]) => `<div class="tMeter${m[k] < 20 && k !== 'buzz' ? ' low' : ''}"><span>${i} ${n}</span><s>${k === 'buzz' ? `<b class="sz" style="left:20%;width:${top() - 20}%"></b>` : ''}<u style="width:${m[k]}%"></u></s><b>${Math.round(m[k])}%</b></div>`).join('');
     const flags = [T.hangover && '🤕 Hangover (water or a smoothie cures it)', m.buzz > top() && '🥴 Past your sweet spot', T.wearing === 'plane' && day() >= 2 && '✈️ Still in plane clothes (Freshness drains 2× faster)'].filter(Boolean);
     const W = T.wishes.map(w => `<li class="${w.done ? 'done' : ''}">${w.done ? '✅' : '⬜'} ${WISHES[w.id]}</li>`).join('');
-    const q = T.quest, wallet = q.wallet >= 3 ? '✅ Wallet recovered (+$120)' : q.cold ? '❌ The trail went cold on Day 4' : ['🕵️ Ask lobby security by the Gold Lion Fountain (Lobby)', '🎰 Ask the pit boss by the casino roulette wheel', '⛲ Confront the flamingo-jacket pickpocket at the Bellissimo Fountains (Strip)'][q.wallet] + ' · before Day 4';
+    const q = T.quest, wallet = !walletGone() ? '💼 Your $1,000 wallet is safe… for now' : q.wallet >= 3 ? `✅ Wallet recovered (+${$$(T.walletBack || 120)})` : q.cold ? '❌ The trail went cold on Day 4' : ['🕵️ Ask lobby security by the Gold Lion Fountain (Lobby)', '🎰 Ask the pit boss by the casino roulette wheel', '⛲ Confront the flamingo-jacket pickpocket at the Bellissimo Fountains (Strip)'][q.wallet] + ' · before Day 4';
     const bag = q.suitcase === 2 ? '✅ Suitcase collected' : q.suitcase === 1 ? '🧳 Your suitcase is at the front desk!' : '🧳 The airline says Day 4…';
     const bf = bestie ? `<h3>${bestie.B.icon} ${bestie.B.n} ${bestie.lost ? '· 📱 missing!' : `· ${moodFace(T.bf.mood)} Mood ${Math.round(T.bf.mood)}%`}</h3><button id="hubBf" class="gold">💬 Check in with ${bestie.B.n}</button>` : '';
     const msgs = T.msgs.slice(0, 6).map(x => `<li><b>${x.from}</b> <small>${clock(x.t)}</small><br>${x.msg}</li>`).join('') || '<li class="fine">No texts yet.</li>';
     c.innerHTML = `<h2>✈️ ${TRIP_TYPES[T.type].n}</h2>
-      <p class="hubTop">${T.ended ? '🏁 Trip over · roaming' : `Day ${d} · ${clock()} · checkout Day 5, 12:00 PM`}<br>💵 ${$$(save.coins)} · ⭐ ${T.fun.toLocaleString()} Fun · ${BK().icon} ${BK().n}</p>
+      <p class="hubTop">${T.ended ? '🏁 Trip over · roaming' : `Day ${d} · ${clock()} · ${T.dep ? `✈️ checked out · airport by ${clock(T.dep.by)}` : `checkout Day ${lastDay()}, 12 PM · flight home 4 PM`}`}<br>💵 ${$$(save.coins)} · ⭐ ${T.fun.toLocaleString()} Fun · ${BK().icon} ${BK().n}</p>
       ${T.ended ? '' : `<div class="hubSpeed">Clock: ${SPEEDS.map(s => `<button data-s="${s}" class="${T.speed === s ? 'on' : ''}">${s === 0.5 ? '½×' : s + '×'}</button>`).join('')}</div>`}
       <div class="tMeters">${meters}</div>${flags.length ? `<p class="hubFlags">${flags.join('<br>')}</p>` : ''}
       <p class="fine">👔 ${OUTFITS[T.wearing].n}${T.accOn.length ? ' + ' + T.accOn.map(k => ACCESSORIES[k].n).join(', ') : ''} · Style ${styleScore()} · Charm ${charm()}${statement() ? ' · 💎 statement' : ''}</p>
@@ -279,11 +289,11 @@ export async function initTrip(G) {
       <h3>💼 Ways to earn</h3><ul class="hubList"><li>🎧 DJ Booth gig at the Mega Club (2 h)</li><li>🍹 Bartending Rush at any resort bar (1.5 h)</li><li>📸 Photo Gigs: snap Strip landmarks in photo mode (each spot once a day)</li><li>🎰 Or risk it at the tables…</li></ul>
       <h3 id="hubMsgs">📱 Texts</h3><ul class="hubList msgs">${msgs}</ul>
       <p class="fine">${BK().perk}: ${BK().perkD}</p>
-      <div class="tBtns"><button id="hubLb">🏆 Leaderboard</button><button class="ghost" id="hubFree">🎲 Back to Free Play</button><button class="gold" id="hubClose">Close</button></div>`;
+      <div class="tBtns">${!T.ended && (T.extra || 0) < EXTEND_MAX && !(T.dep && T.dep.missed) ? `<button id="hubExt">🗓️ Stay one more night (${$$(EXTEND_COST)})</button>` : ''}<button id="hubLb">🏆 Leaderboard</button><button class="ghost" id="hubFree">🎲 Back to Free Play</button><button class="gold" id="hubClose">Close</button></div>`;
     c.querySelectorAll('.hubSpeed button[data-s]').forEach(b => b.onclick = () => { T.speed = +b.dataset.s; openHub(); hudNow(); });
     c.querySelectorAll('.hubSpeed button[data-int]').forEach(b => b.onclick = () => { T.interest = b.dataset.int; persist(); openHub(); });
     const hb = c.querySelector('#hubBf'); if (hb) hb.onclick = () => openCheckIn();
-    c.querySelector('#hubClose').onclick = () => G.closeUI(); c.querySelector('#hubLb').onclick = () => social.board(); social.bindHub(c);
+    c.querySelector('#hubClose').onclick = () => G.closeUI(); { const he = c.querySelector('#hubExt'); if (he) he.onclick = () => extendStay(); } c.querySelector('#hubLb').onclick = () => social.board(); social.bindHub(c);
     c.querySelectorAll('#npcBf [data-bf]').forEach(b => b.onclick = () => { callBestie(b.dataset.bf); openHub(); });
     c.querySelector('#hubFree').onclick = () => { persist(); const u = new URL(location.href); u.searchParams.delete('mode'); location.href = u.pathname + u.search; };
     G.showUI('tripHub'); if (sec) { const t = c.querySelector(sec === 'wishes' ? '#hubWishes' : '#hubMsgs'); if (t) t.scrollIntoView({ block: 'start' }); } }
@@ -299,8 +309,8 @@ export async function initTrip(G) {
 
   // ---------------- setup wizard ----------------
   function showSetup() { const c = setupCard; const pickS = { type: 'solo', back: 'divorcee', bestie: 'roxy', interest: (save.trip && save.trip.interest) || 'everyone' }; const old = save.trip && save.trip.v === 1 ? save.trip : null;
-    const opt = (k, items) => `<div class="tOpts" data-k="${k}">${Object.entries(items).map(([id, o]) => `<button data-id="${id}" class="tOpt${pickS[k] === id ? ' on' : ''}"><b>${o.icon} ${o.n}</b><small>${k === 'back' ? `${$$(o.cash)} start · <i>${o.perk}</i>: ${o.perkD}` : k === 'bestie' ? `${o.tag} · loves ${o.loves}` : o.d}</small></button>`).join('')}</div>`;
-    c.innerHTML = `<h2>✈️ Epic or Fail: Vegas Trip</h2><p class="fine">Five days. No wallet. No luggage. A prepaid suite and a dream. Survive to checkout on Day 5 at noon and make it legendary. Play money only.</p>
+    const opt = (k, items) => `<div class="tOpts" data-k="${k}">${Object.entries(items).map(([id, o]) => `<button data-id="${id}" class="tOpt${pickS[k] === id ? ' on' : ''}"><b>${o.icon} ${o.n}</b><small>${k === 'back' ? `${$$(o.cash)} pocket cash · <i>${o.perk}</i>: ${o.perkD}` : k === 'bestie' ? `${o.tag} · loves ${o.loves}` : o.d}</small></button>`).join('')}</div>`;
+    c.innerHTML = `<h2>✈️ Epic or Fail: Vegas Trip</h2><p class="fine">Five days. $1,000 in your wallet (for now), a prepaid suite and a dream. Survive to checkout on Day 5, make your 4 PM flight home (or stay longer) and make it legendary. Play money only.</p>
       ${old && !old.ended ? `<div class="tResume"><b>Saved trip</b><span>${TRIP_TYPES[old.type].n} · Day ${Math.floor(old.min / 1440) + 1}, ${clock(old.min)} · ${$$(save.coins)} · ⭐ ${old.fun.toLocaleString()}${old.bestie ? ' · with ' + BESTIES[old.bestie].n : ''}</span><button class="gold" id="tsResume">▶ Resume trip</button></div><p class="fine">…or start a fresh 5-day run (replaces the saved trip):</p>` : old && old.ended ? `<p class="fine">Last trip: ${old.rank || ''}</p>` : ''}
       <h3>1 · Trip type</h3>${opt('type', TRIP_TYPES)}<h3>2 · Your backstory</h3>${opt('back', BACKSTORIES)}<div id="tsBf"><h3>3 · Your bestie</h3>${opt('bestie', G.net && G.net.N && G.net.N.on ? { ...BESTIES, friend: { n: 'A real friend (online)', icon: '👥', tag: 'Plays on their own device', loves: 'whatever you two get up to. Pair up in 📱 → My trip once you\'re both on the Strip' } } : BESTIES)}</div><h3>4 · Romance: interested in</h3><div class="tOpts tIntr" data-k="interest">${Object.entries(INTERESTS).map(([id, [ic, n]]) => `<button data-id="${id}" class="tOpt${pickS.interest === id ? ' on' : ''}"><b>${ic} ${n}</b></button>`).join('')}</div><p class="fine">Vegas locals keep their own schedules: chat, build Connection, recruit a crew, and maybe someone comes back to your suite (non-explicit, fade to black, they can always say no).</p>
       <div class="tBtns"><button class="gold" id="tsGo">Start the trip ✈️</button></div>`;
@@ -314,21 +324,22 @@ export async function initTrip(G) {
       closet: ['plane'], accOwned: [], wearing: 'plane', accOn: [], stats: { jobs: 0, photos: 0, blackouts: 0, wins: 0, spent: 0, earned: 0 }, paid: {}, lm: [], selfies: [],
       quest: { wallet: 0, cold: false, suitcase: 0 }, zero: 0, low: false, wishes: [...WISH_SETS[type], ...(bf ? [BESTIE_WISH[bf]] : buddyMode ? ['buddyHour'] : [])].map(id => ({ id, done: false })), buddyMode,
       danceS: 0, danceTog: 0, rlSpins: 0, hotTubS: 0, needleS: 0, limoS: 0, bf: bf ? { energy: 80, hunger: 50, buzz: 0, mood: 65, lost: null, wanderNight: 0, hypeAt: -999 } : null,
-      msgs: [], ended: false, endReason: '', rank: '', pos: null, lastWarn: {}, cdj: -999, cbar: -999, vipDay: 0, interest, loc: {}, crew: [], nights: 0, arr: G.arrival ? { bag: 0, shop: 0, report: 0, ride: 0, done: 0 } : null };
-    save.stash = {}; save.bagIn = false;
-    G.setCoins(BACKSTORIES[back].cash); wear('plane'); G.setTod(todFor(hour())); if (world) world.npcs.pick.visible = false;
+      msgs: [], ended: false, endReason: '', rank: '', pos: null, lastWarn: {}, cdj: -999, cbar: -999, vipDay: 0, interest, loc: {}, crew: [], nights: 0, arr: G.arrival ? { bag: 0, shop: 0, report: 0, ride: 0, done: 0 } : null, theft: 0, extra: 0, dep: null };
+    save.stash = {}; save.bagIn = false; save.bagIn2 = false; if (G.arrival) { G.arrival.setPanel(null); G.arrival.dropBags(); }
+    G.setCoins(WALLET0); wear('plane'); G.setTod(todFor(hour())); if (world) world.npcs.pick.visible = false;
     G.closeUI(); G.parkCar(); if (G.arrival) G.arrival.start(); else { G.enterArea('strip', 40, -318, -Math.PI / 2 + 0.25); G.cam.pitch = 0.18; }
     if (bf) bestie = createBestie(G, T, { text, fun: (n, why) => addFun(n, why, true), toast: G.toast });
     locals = makeLocals();
     const B = BACKSTORIES[back], bfL = bf ? `<li>Keep <b>${BESTIES[bf].n}</b> happy (fed, watered, not lost). They love ${BESTIES[bf].loves}.</li>` : buddyMode ? '<li>👥 Pair up with your friend: 📱 → My trip → Trip buddy. Stick together for +25% Fun.</li>' : '';
-    dlg({ title: `🛬 Day 1 · Sin City International`, cls: 'introCard', html: `<p>${B.story}</p><p>Now you're at baggage claim with <b>${$$(B.cash)}</b>, a prepaid suite (2407, Floor 24) and the clothes on your back.</p>
-      <ul class="hubList"><li>🧳 Grab your carry-on off <b>Carousel 11</b>, stock the suite at the <b>Booze Library</b>, then your limo is waiting at the pickup curb. The trip clock starts at TILEO KINGDOM: <b>Day 1, 10:00 AM</b>.</li><li>Survive until <b>checkout: Day 5, 12:00 PM</b> (1 real minute = 1 game hour).</li><li>Watch your meters: eat, hydrate, rest, shower. Keep your Buzz in the gold sweet spot.</li><li>A security guard by the lobby's Gold Lion Fountain saw who took your wallet. Track it down <b>before Day 4</b>.</li>${bfL}<li>Meet the locals (name tags), build Connection, recruit a crew of up to 3.</li><li>Tick off your Wish List and rack up ⭐ Fun.</li></ul>
-      <p class="fine">Tap the trip panel (top left) or 📱 → My trip for everything. The taco & water cart is on the TILEO forecourt.</p>`, buttons: [["Let's go 🎲", () => { setTimeout(() => go(`💵 ${$$(B.cash)} and a dream. Welcome to Vegas, ${save.look.name}.`), 30); }, 'gold']] });
+    dlg({ title: `🛬 Day 1 · Sin City International`, cls: 'introCard', html: `<p>${B.story}</p><p>Now you're at baggage claim with <b>$1,000</b> in your wallet, <b>${$$(B.cash)}</b> ${B.pocket || 'in your pocket'}, a prepaid suite (2407, Floor 24) and the clothes on your back.</p>
+      <ul class="hubList"><li>🧳 Grab your carry-on off <b>Carousel 11</b>, stock the suite at the <b>Booze Library</b>, then your limo is waiting at the pickup curb. At TILEO KINGDOM, check in with the concierge: the bellman takes your bags up. The trip clock starts then: <b>Day 1, 10:00 AM</b>.</li><li>Hotel checkout <b>Day 5, 12:00 PM</b>; your flight home is at <b>4:00 PM</b>: grab your bags at the bell desk and be at the airport by 3:00 PM (or extend your stay). 1 real minute = 1 game hour.</li><li>Watch your meters: eat, hydrate, rest, shower. Keep your Buzz in the gold sweet spot.</li><li>Keep an eye on that wallet in the lobby…</li>${bfL}<li>Meet the locals (name tags), build Connection, recruit a crew of up to 3.</li><li>Tick off your Wish List and rack up ⭐ Fun.</li></ul>
+      <p class="fine">Tap the trip panel (top left) or 📱 → My trip for everything. The taco & water cart is on the TILEO forecourt.</p>`, buttons: [["Let's go 🎲", () => { setTimeout(() => go(`💵 $1,000 and a dream. Welcome to Vegas, ${save.look.name}.`), 30); }, 'gold']] });
     persist(); }
   function resume() { T = save.trip; if (bestie) { bestie.dispose(); bestie = null; } if (locals) { locals.dispose(); locals = null; } wear(T.wearing); G.closeUI(); G.parkCar();
     const P = T.pos; if (P && G.areas[P.a]) { G.enterArea(P.a, P.x, P.z, P.yaw); const q = G.safeSpot(P.x, P.z); player.position.set(q.x, G.areas[P.a].floorY || 0, q.z); } else G.enterArea('strip', 40, -318, -Math.PI / 2 + 0.25);
     G.setTod(todFor(hour())); if (T.bestie) { bestie = createBestie(G, T, { text, fun: (n, why) => addFun(n, why, true), toast: G.toast }); if (T.bf.lost) { const l = T.bf.lost; T.bf.lost = null; bestie.wander(l); } }
     if (arriving() && G.arrival) G.arrival.start({ resume: true, noEnter: true });
+    if (G.arrival) { G.arrival.setPanel(T.dep && !T.ended ? depPanel : null); if (T.dep && !T.ended) { if (T.dep.bags) G.arrival.giveBags(); else G.arrival.bagsDown(!!T.bestie); } }
     if (world) world.npcs.pick.visible = T.quest.wallet === 2 && !T.quest.cold;
     locals = makeLocals();
     go(`✈️ Welcome back: Day ${day()} · ${clock()} · ${$$(save.coins)}`); }
@@ -336,13 +347,13 @@ export async function initTrip(G) {
 
   // ---------------- ending ----------------
   function endTrip(reason) { if (!T || T.ended) return; T.ended = true; T.endReason = reason; busy = false; const wDone = T.wishes.filter(w => w.done).length, cash = save.coins, fun = T.fun, mood = T.bf ? T.bf.mood : null, solo = !T.bf;
-    let k; if (reason === 'greyhound') k = 'F'; else if (fun >= 6000 && wDone === T.wishes.length && (solo || mood >= 75) && cash >= 150 && T.stats.blackouts === 0) k = 'S';
+    let k; if (reason === 'greyhound' || reason === 'missed') k = 'F'; else if (fun >= 6000 && wDone === T.wishes.length && (solo || mood >= 75) && cash >= 150 && T.stats.blackouts === 0) k = 'S';
     else if (locals && locals.loveStory()) k = 'L';
     else if ((!solo && mood >= 80 && wDone >= 4) || (T.buddyMode && !T.bf && social.togetherPct() >= 60 && wDone >= 4)) k = 'A+'; else if (cash >= 400 || (fun >= 4500 && wDone >= 3)) k = 'A'; else if (fun >= 2200 || wDone >= 3) k = 'B'; else k = 'C';
-    const R0 = RANKS.find(r => r.k === k), R = k === 'L' ? { ...R0, d: R0.d.replace('{who}', locals.loveStory()) } : R0; T.rank = `${R.n} (${R.k})`; persist(); G.closeUI(); G.parkCar();
+    const R0 = RANKS.find(r => r.k === k), R = k === 'L' ? { ...R0, d: R0.d.replace('{who}', locals.loveStory()) } : reason === 'missed' ? { ...R0, n: '🚌 Missed the Flight, Took the Greyhound', d: 'Gate closed, wallet light, 19 hours on a bus with a stranger asleep on your shoulder. Epic fail.' } : R0; T.rank = `${R.n} (${R.k})`; persist(); G.closeUI(); G.parkCar();
     const st = [['💵 Final cash', $$(cash)], ['⭐ Fun points', fun.toLocaleString()], ['📋 Wishes', `${wDone} / ${T.wishes.length}`], ['🫶 Bestie happiness', T.buddyMode && !T.bf ? (T.buddy && T.buddy.name ? `👥 ${T.buddy.name} · together ${social.togetherPct()}%` : '👥 no buddy paired') : solo ? 'Solo trip' : `${moodFace(mood)} ${Math.round(mood)}%`],
-      ['👔 Final fit', `${OUTFITS[T.wearing].n} · Style ${styleScore()} · Charm ${charm()}`], ['💼 Jobs worked', T.stats.jobs], ['📸 Photos sold', T.stats.photos], ['😵 Blackouts', T.stats.blackouts], ['🎰 Wins', T.stats.wins], ['💼 Wallet', T.quest.wallet >= 3 ? 'recovered' : 'lost forever'], ['🤝 Crew recruited', (T.crewEver || []).length], ['🌙 Nights with company', T.nights || 0]];
-    const why = reason === 'greyhound' ? '🚌 You hit $0 twice. The Greyhound leaves in 5 minutes.' : reason === 'early' ? '✈️ Early checkout.' : '🛎️ Day 5 · 12:00 PM · checkout time.';
+      ['👔 Final fit', `${OUTFITS[T.wearing].n} · Style ${styleScore()} · Charm ${charm()}`], ['💼 Jobs worked', T.stats.jobs], ['📸 Photos sold', T.stats.photos], ['😵 Blackouts', T.stats.blackouts], ['🎰 Wins', T.stats.wins], ['💼 Wallet', T.quest.wallet >= 3 ? 'recovered' : 'lost forever'], ['✈️ Flight home', reason === 'flight' ? 'made it' : reason === 'missed' ? 'missed' : '—'], ['🗓️ Extra nights', T.extra || 0], ['🤝 Crew recruited', (T.crewEver || []).length], ['🌙 Nights with company', T.nights || 0]];
+    const why = reason === 'greyhound' ? '🚌 You hit $0 twice. The Greyhound leaves in 5 minutes.' : reason === 'missed' ? '😱 You missed your flight home and rode the Greyhound instead.' : reason === 'flight' ? `✈️ Wheels up! You made your flight home${T.extra ? ` after ${T.extra} extra night${T.extra > 1 ? 's' : ''}` : ''}.` : reason === 'early' ? '✈️ Early checkout.' : '🛎️ Day 5 · 12:00 PM · checkout time.';
     recapCard.innerHTML = `<h2>🧾 Vegas Trip Checkout</h2><p class="fine">${why} ${TRIP_TYPES[T.type].icon} ${TRIP_TYPES[T.type].n} · ${BK().icon} ${BK().n}</p>
       <div class="tRank r${k.replace('+', 'p')}"><b>${R.n}</b><span>${R.k === 'L' ? '♥' : R.k + '-Rank'}</span><small>${R.d}</small></div>
       <p class="tScore">🏆 Trip score <b>${social.score().toLocaleString()}</b></p>
@@ -369,6 +380,8 @@ export async function initTrip(G) {
     if (!running()) { if ((hudT += dt) > 1) { hudT = 0; hudNow(); } return; }
     if (clockRuns()) { advance(dt * T.speed, ''); if (T.m.energy <= 0) blackout(); }
     const A = state.area.id;
+    if (T.theft === 1 && !arriving()) { theftT += dt; if (theftT > 5 && !state.ui && !busy && (A === 'lobby' || A === 'rooms')) doTheft(); }
+    if (T.dep && !T.ended && (hudT2 += dt) > 1) { hudT2 = 0; if (G.arrival) G.arrival.render(); }
     if (A === 'pool') poolCheck();
     if (!state.ui) zeroCheck();
     if (state.emote === 'dance' && A === 'club' && G.inRect(player.position, G.club.danceRect)) { T.danceS += dt; if (T.danceS >= 60) wish('dance60'); if (bestie && bestie.present()) { T.danceTog += dt; if (T.danceTog >= 60) wish('danceTogether'); if ((T.danceTog | 0) % 20 === 0 && T.danceTog - dt < (T.danceTog | 0)) bestie.react('dance'); } }
@@ -405,19 +418,62 @@ export async function initTrip(G) {
     report: '🧾 Baggage Services · report the lost suitcase', servicesLabel: 'Baggage Services · report your lost suitcase 🧾', services: reportBag,
     store: () => (T ? T.arr || null : null), clock: () => (T ? { h: Math.floor(hour()), m: Math.floor((hour() % 1) * 60 + 1e-6) } : { h: 10, m: 0 }), drink: drinkStash,
     onBuy: () => { addFun(10); hudNow(); }, bagInMsg: '🧳 Your carry-on: a phone charger, one sock and a suite voucher. The big suitcase is in Boise.',
-    doneMsg: '🛎️ TILEO KINGDOM! A bellhop takes your carry-on up to Suite 2407.', onDone: () => { dayBanner('DAY 1 · 10:00 AM', 'Welcome to TILEO KINGDOM · the trip clock is running'); hudNow(); persist(); } });
+    doneMsg: '🛎️ The bellman is wheeling your bags up to Suite 2407.', maxBuys: 4,
+    onDone: () => { dayBanner('DAY 1 · 10:00 AM', 'Welcome to TILEO KINGDOM · the trip clock is running'); if (T && !T.theft) { T.theft = 1; theftT = 0; } hudNow(); persist(); },
+    bellLabel: () => (T && T.dep && !T.dep.bags && !T.ended ? '🛎️ Bell desk · pick up your bags 🧳' : null), bell: () => pickUpBags(),
+    lobbyTarget: () => (T && T.dep && !T.dep.bags && !T.ended ? { x: G.arrival.BELL.x + 0.6, z: G.arrival.BELL.z } : null),
+    airportTarget: () => (T && T.dep && !T.dep.done && !T.ended && G.airport.counterSpot ? G.airport.counterSpot : null), counter: () => counter(),
+    panelAct: a => (a === 'extend' ? extendStay() : a === 'rebook' ? rebook() : a === 'bus' ? setTimeout(() => endTrip('missed'), 30) : null) });
+  // ---------------- v8.1: the wallet theft right after check-in ----------------
+  let theftT = 0;
+  function doTheft(silent) { if (!T || T.theft === 2) return; T.theft = 2; const pocket = BACKSTORIES[T.back].cash, lost = Math.max(0, save.coins - pocket); T.walletLost = lost; G.setCoins(Math.min(save.coins, pocket)); hudNow(); persist();
+    if (silent) return; amb('spin');
+    dlg({ title: '💸 Hey! Your wallet!', html: `<p>A guy in a <b>flamingo-pink jacket</b> bumps into you: "Oop, sorry, sugar!" Two steps later you pat your pocket.</p><p><b>Your wallet is gone</b>, with ${$$(lost)} inside. All you have left is the ${$$(save.coins)} ${BK().pocket || 'in your pocket'}.</p><p class="fine">Lobby security by the Gold Lion Fountain saw it happen. Track him down <b>before Day 4</b>.</p>`, buttons: [['😤 Find that wallet', null, 'gold']] });
+    setTimeout(() => text('Lobby Security', 'Saw that! Flamingo jacket. Come talk to me by the Gold Lion Fountain. 🕵️'), 1500); }
+  const amb = k => { try { G.amb.chime(k); } catch (e) {} };
+  // ---------------- v8.1: checkout, the bell desk, the airport and the flight home (or stay longer) ----------------
+  function startDeparture(by, why) { if (!T || T.ended || T.dep) return; T.dep = { by, bags: 0, missed: false, done: 0 }; const two = !!T.bestie && !(T.bf && T.bf.lost);
+    if (G.arrival) G.arrival.bagsDown(two);
+    text('TILEO KINGDOM', why === 'early' ? 'Checked out early. Your bags are waiting at the bell desk in the lobby. ✈️' : 'Checkout time! Your bags are waiting at the bell desk in the lobby. 🧳');
+    dayBanner(why === 'early' ? 'CHECKED OUT' : 'CHECKOUT', `Bags at the bell desk · airport by ${clock(by)}`);
+    if (state.area.id === 'room' || state.area.id === 'rooms') G.transition(() => { G.enterArea('lobby', G.arrival ? G.arrival.BELL.x + 2.2 : -10, G.arrival ? G.arrival.BELL.z - 1 : 10, -Math.PI / 2); G.updateCamera(1); G.toast('🛎️ Housekeeping knocks: checkout time! Your bags went down to the bell desk.'); });
+    if (G.arrival) G.arrival.setPanel(depPanel); persist(); }
+  function depPanel() { if (!T || !T.dep || T.ended) return null; const D = T.dep, left = Math.round(D.by - T.min), at = state.area.id === 'airport';
+    if (D.missed) return `<b>😱 You missed your flight</b><p class="fine">Rebook and stay one more night, or ride the Greyhound home.</p>${save.coins >= EXTEND_COST ? `<button data-act="rebook">🗓️ Rebook (${$$(EXTEND_COST)})</button> ` : ''}<button data-act="bus">🚌 Greyhound</button>`;
+    const st = [[D.bags, '🧳 Pick up your bags at the bell desk (lobby)'], [at, `🚘 Get to Sin City International by ${clock(D.by)} (limo from the TILEO curb, or 🌀 ✈️)`], [0, '✈️ Budget Air counter · check in for your flight']];
+    return `<b>✈️ Flight home · ${clock(D.by + 60)}</b><ul>${st.map(([d, t]) => `<li class="${d ? 'done' : ''}">${d ? '✅' : '⬜'} ${t}</li>`).join('')}</ul><p class="fine">⏰ ${left > 0 ? `${Math.floor(left / 60)} h ${left % 60} min to reach the airport` : 'the gate is closing!'}</p>${(T.extra || 0) < EXTEND_MAX ? `<button data-act="extend">🗓️ Stay one more night (${$$(EXTEND_COST)})</button>` : ''}`; }
+  function pickUpBags() { if (!T || !T.dep || T.dep.bags) return; T.dep.bags = 1; if (G.arrival) G.arrival.giveBags(); G.toast('🧳 The bellman hands over your bags: "Safe travels! Your limo is out front."'); persist(); if (G.arrival) G.arrival.render(); }
+  function restoreSuite() { if (G.arrival) { G.arrival.dropBags(); G.arrival.bagsUp(!!T.bestie); G.arrival.setPanel(null); } }
+  function extendStay() { if (!T || T.ended) return; if ((T.extra || 0) >= EXTEND_MAX) return G.toast('🗓️ Budget Air: "That\'s as long as we can push it, hon. Next flight is final."'); if (T.dep && T.dep.missed) return rebook();
+    if (!spend(EXTEND_COST)) return G.toast(`💸 One more night costs ${$$(EXTEND_COST)} (suite + flight change).`);
+    T.extra = (T.extra || 0) + 1; if (T.dep) { T.dep = null; restoreSuite(); } T.flightTxt = 0; addFun(60, 'One more night in Vegas!');
+    text('Budget Air', `Rebooked! Your new flight home: Day ${lastDay()} at 4:00 PM. TILEO KINGDOM extended Suite 2407. 🗓️`); G.closeUI(); hudNow(); persist(); }
+  function rebook() { if (!T || !T.dep || !T.dep.missed) return; if (!spend(EXTEND_COST)) return G.toast(`💸 Rebooking costs ${$$(EXTEND_COST)}. It's the Greyhound, then.`);
+    T.extra = (T.extra || 0) + 1; T.dep = null; T.flightTxt = 0; restoreSuite(); G.closeUI(); text('Budget Air', `Rebooked on tomorrow's flight: Day ${lastDay()}, 4:00 PM. Don't miss this one! TILEO gave you Suite 2407 back.`); hudNow(); persist(); }
+  function missedFlight() { if (!T || !T.dep || T.dep.missed) return; T.dep.missed = true; persist(); if (G.arrival) G.arrival.render(); const can = save.coins >= EXTEND_COST;
+    dlg({ title: '😱 You missed your flight!', html: `<p>It's ${clock()}. Budget Air TK 778 is closing the gate without you.</p><p class="fine">${can ? `Rebook tomorrow's flight for ${$$(EXTEND_COST)} and TILEO gives you your suite back for one more night, or ride the Greyhound home (19 hours).` : `Rebooking costs ${$$(EXTEND_COST)} and you can't cover it. The Greyhound it is.`}</p>`,
+      buttons: [...(can ? [[`🗓️ Rebook + one more night (${$$(EXTEND_COST)})`, () => { rebook(); }, 'gold']] : []), ['🚌 Take the Greyhound home', () => { setTimeout(() => endTrip('missed'), 50); }, can ? '' : 'gold']] }); }
+  function counter() { if (!T || T.ended) return G.toast('✈️ Budget Air: "Come back anytime. Vegas misses you already."');
+    if (!T.dep) return dlg({ title: '✈️ Budget Air · Departures', html: `<p>"Your flight home is <b>Day ${lastDay()} at 4:00 PM</b>, hon. Check out of the hotel by noon, grab your bags at the bell desk and be here by 3:00 PM."</p>`,
+      buttons: [...((T.extra || 0) < EXTEND_MAX ? [[`🗓️ Take a later flight · stay one more night (${$$(EXTEND_COST)})`, () => { extendStay(); }]] : []), ['Got it', null, 'gold']] });
+    if (T.dep.missed) return missedFlight2();
+    if (T.dep.bags) return dlg({ title: '✈️ Budget Air · check-in', html: `<p>"Two bags? Tag, tag, belt. Gate B7, boarding at 3:30. Have a fabulous flight, ${esc(save.look.name)}!"</p>`, buttons: [['✈️ Check in & fly home', () => { flyHome(); }, 'gold'], ['Not yet']] });
+    dlg({ title: '✈️ Budget Air · check-in', html: '<p>"No bags, hon? Your suitcase is still at the TILEO KINGDOM bell desk."</p>', buttons: [['🏃 Go back for my bags', null, 'gold'], [`✈️ Fly without them (ship home, ${$$(40)})`, () => { if (!spend(40)) { G.toast('💸 Shipping costs $40.'); return false; } flyHome(); }]] }); }
+  function missedFlight2() { const can = save.coins >= EXTEND_COST; dlg({ title: '✈️ Budget Air', html: '<p>"That flight left, hon. Want tomorrow\'s?"</p>', buttons: [...(can ? [[`🗓️ Rebook (${$$(EXTEND_COST)})`, () => { rebook(); }, 'gold']] : []), ['🚌 Greyhound home', () => { setTimeout(() => endTrip('missed'), 50); }]] }); }
+  function flyHome() { if (!T || !T.dep) return; T.dep.done = 1; if (G.arrival) { G.arrival.dropBags(); G.arrival.setPanel(null); } addFun(300, null, true); if (bestie) bestie.mood(10); setTimeout(() => endTrip('flight'), 80); }
+
   let locals = null;
   function callBestie(key) { if (!T || T.bestie) return; T.bestie = key; T.bf = { energy: 80, hunger: 50, buzz: 0, mood: 65, lost: null, wanderNight: 0, hypeAt: -999 }; bestie = createBestie(G, T, { text, fun: (n, why) => addFun(n, why, true), toast: G.toast }); G.toast(`${BESTIES[key].icon} ${BESTIES[key].n} is on the way! "Where's the party?"`); persist(); }
   const social = createSocial(G, () => T, { addFun, toast: G.toast, text, dlg, rowItem, el, persist, running, day, wish, reopen: () => openHub() });
   const makeLocals = () => createLocals(G, T, { dlg, rowItem, toast: G.toast, addFun, spend, text, charm, top, hour, day, jump, sleepAway, bestie: () => bestie, wish, persist, el });
   G.room.interacts.push({ x: 2.6, z: 2.2, r: 2.2, when: () => !!locals && running() && locals.crew.length >= 2, label: 'Throw a suite party with your crew 🎉', act: () => suiteParty() });
-  world = buildTripWorld(G, { onVenue: openVenue, onShower, onBed, onDJ, onRevue, onClue, quest: () => (T ? (T.quest.cold ? -1 : T.quest.wallet) : -1) });
+  world = buildTripWorld(G, { onVenue: openVenue, onShower, onBed, onDJ, onRevue, onClue, quest: () => (T ? (T.quest.cold || !walletGone() ? -1 : T.quest.wallet) : -1) });
 
   return {
     begin() { const L = save.look; if (!T || T.ended) Object.assign(L, OUTFITS.plane.look(L.body === 'm' ? 'm' : 'f')); G.applyLook(player, L);
       G.openCreator(); $('crTitle').textContent = 'Who\'s flying to Vegas?'; $('crDone').textContent = 'Next: plan the trip ✈️'; },
     afterCreator() { if (T && !T.ended) wear(T.wearing); showSetup(); },
-    update, near, canEnter, camera, todTap() { if (T) G.toast(T.ended ? '🌴 The trip is over: time stands still.' : `🕐 Trip clock: Day ${day()} · ${clock()}. Change the pace with the ${speedLbl()} button.`); },
+    update, near, canEnter, camera, counterLabel: () => (T && T.dep && !T.ended ? '✈️ Budget Air · check in for your flight home' : 'Budget Air · Departures ✈️'), theftNow: silent => doTheft(silent), startDeparture: (m, w) => startDeparture(m ?? T.min + AIRPORT_BY, w || 'test'), missedFlight, extendStay, rebook, counter, pickUpBags, todTap() { if (T) G.toast(T.ended ? '🌴 The trip is over: time stands still.' : `🕐 Trip clock: Day ${day()} · ${clock()}. Change the pace with the ${speedLbl()} button.`); },
     emit(k, d) { onCasino(k, d || {}); }, presence: () => (T ? social.presence() : 0), get social() { return social; }, callBestie, bets: [2, 5, 10, 25], brokeMsg: 'Not enough Trip Cash. Work a gig or sell some photos.', money,
     // test hooks
     get T() { return T; }, get bestie() { return bestie; }, get locals() { return locals; }, suiteParty, get world() { return world; }, advance: m => advance(m), startNew, resume, endTrip, openHub, openVenue, openBoutique, openCheckIn, buy, wear, onBed, onShower, blackout, wish, styleScore, charm, startShow, onDJ, onRevue, workBar, onClue, confront, frontDesk, vip, poolCheck: () => poolCheck(),

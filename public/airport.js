@@ -3,10 +3,10 @@
 // Real-airport touches as parodies: a vintage plane hanging over the carousels, a big post clock, slot machines in baggage claim,
 // a liquor-store-meets-library, a chauffeur holding a sign with your name, taxis and a parking garage across the arrivals road.
 import * as THREE from 'three';
-import { M, B, box, cyl, plane, glow, neon, onNight, signMesh, signTex, rng, PI, goldM, chromeM, canvas, tex, pbr, logoPlane } from './core.js?v=1794000555';
-import { makeCharacter, randomLook, animate } from './characters.js?v=1794000555';
-import { stadium, Batch } from './city.js?v=1794000555';
-import { parkedTaxis } from './strip8.js?v=1794000555';
+import { M, B, box, cyl, plane, glow, neon, onNight, signMesh, signTex, rng, PI, goldM, chromeM, canvas, tex, pbr, logoPlane } from './core.js?v=1794015301';
+import { makeCharacter, randomLook, animate } from './characters.js?v=1794015301';
+import { stadium, Batch } from './city.js?v=1794015301';
+import { parkedTaxis } from './strip8.js?v=1794015301';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const R = rng(7070);
@@ -177,6 +177,22 @@ export function buildAirport(A, C) {
     for (let k = 0; k < 9; k++) { const s = makeSuitcase(BAG_C[k % BAG_C.length], { metal: 0.2 }); s.position.set(32.6 - (k % 2) * 0.8, (k % 3) * 0.02, 3.2 + k * 1.15); s.rotation.y = -PI / 2 + (R() - 0.5) * 0.5; g.add(s); }
     npc(g, A, 28.6, 8, -PI / 2, '', { skin: '#f1c9a5', hair: '#3b2412', outfit: '#123050', style: 'solid', body: 'f', name: 'Agent' });
     A.interacts.push({ x: 25.3, z: 8, r: 2.6, label: () => C.servicesLabel(), act: () => C.services() }); }
+
+  // ---------------- Budget Air · Departures counter (east wall, by the escalator up to the gates): the trip's flight home ----------------
+  { const navy = M(0x123050, { roughness: 0.5 }), orange = M(0xff6a00, { roughness: 0.5 });
+    b.box(white, 30.8, 0, -26.5, 1.1, 1.1, 7.2); b.box(orange, 30.2, 0.1, -26.5, 0.04, 0.5, 7.0); b.box(navy, 30.8, 1.1, -26.5, 1.25, 0.06, 7.3); b.box(navy, 33.7, 0, -26.5, 0.4, 4.2, 9);
+    signMesh(g, 'BUDGET AIR · DEPARTURES ✈', '#ffffff', 33.45, 5.0, -26.5, 9, 1.2, -PI / 2, 'CHECK-IN · BAG DROP · FLIGHTS HOME', '#ff6a00');
+    for (let k = 0; k < 3; k++) b.box(rubber, 32.3, 0, -29.4 + k * 2.6, 0.9, 0.35, 1.3); // bag-drop belts
+    A.aabbs.push([30.2, 34, -30.2, -22.8]); npc(g, A, 31.9, -26.5, -PI / 2, '', { skin: '#d9a47c', hair: '#7a4a1e', outfit: '#ff6a00', style: 'solid', body: 'f', name: 'Budget Air' });
+    A.counterSpot = { x: 29.2, z: -26.5 }; A.interacts.push({ x: 29.2, z: -26.5, r: 2.6, label: () => (C.counterLabel ? C.counterLabel() : 'Budget Air · Departures ✈️'), act: () => C.counter() }); }
+
+  // ---------------- Sin City Snacks kiosk (v8.1): coffee, pretzels, pizza for the road ----------------
+  { const red = M(0xd0342c, { roughness: 0.5 }), yel = M(0xffd23a, { roughness: 0.5 });
+    b.box(white, -14, 0, 19.2, 2.4, 1.05, 1.1); b.box(red, -14, 1.05, 19.2, 2.5, 0.06, 1.2); b.box(dark, -14, 1.11, 19.6, 2.3, 1.2, 0.08);
+    for (const x of [-15.1, -12.9]) b.cyl(steel, x, 1.11, 19.2, 0.04, 1.6, 8); b.box(yel, -14, 2.71, 19.2, 2.7, 0.12, 1.5); b.box(red, -14, 2.83, 19.2, 2.7, 0.12, 1.5);
+    signMesh(g, 'SIN CITY SNACKS', '#ffd23a', -14, 2.25, 18.6, 2.3, 0.5, PI, 'COFFEE · PRETZELS · PIZZA', '#1a0f06');
+    A.aabbs.push([-15.3, -12.7, 18.6, 19.8]); npc(g, A, -14, 20.05, PI, '', { skin: '#d9a47c', hair: '#3b2412', outfit: '#d0342c', style: 'solid', body: 'm', name: 'Snacks' });
+    A.interacts.push({ x: -14, z: 17.6, r: 2.2, label: 'Sin City Snacks · coffee, pretzel, pizza 🥨', act: () => (C.snacks ? C.snacks() : null) }); }
 
   // ---------------- slot machines (yes, in baggage claim) ----------------
   { const screen = (() => { const [c, x] = canvas(128, 128); const gr = x.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, '#3a0a5a'); gr.addColorStop(1, '#0a0418'); x.fillStyle = gr; x.fillRect(0, 0, 128, 128);

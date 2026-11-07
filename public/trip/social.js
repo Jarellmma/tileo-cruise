@@ -3,7 +3,7 @@
 // w: wishes done, f: fun, e: trip over }. Two players who name each other are trip buddies. Together (same place, within 25 m) everyday
 // Fun is +25%, and when your buddy completes a wish with you there you get +250 Fun. If your buddy drops out, an NPC bestie can take over.
 // Leaderboards: POST /trip/score and GET /trip/top on the TILEO KINGDOM server; every device also keeps its own best trips.
-import { RANKS, TRIP_TYPES, BACKSTORIES, BESTIES } from './data.js?v=1794000555';
+import { RANKS, TRIP_TYPES, BACKSTORIES, BESTIES } from './data.js?v=1794015301';
 const BEST_KEY = 'tileoKingdom.tripBest';
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 

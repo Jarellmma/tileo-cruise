@@ -5,9 +5,9 @@
 //                   south of the Strip where planes land and take off right over the south end
 //   Welcome to Sin City · an original neon welcome sign on the median at the south end
 import * as THREE from 'three';
-import { M, B, neon, glow, onNight, signMesh, PI, goldM, chromeM, canvas, tex, pbr, rep, T, rng } from './core.js?v=1794000555';
-import { rect, arcBand, inset, Batch, facade } from './city.js?v=1794000555';
-import { carParts, carMats } from './cars.js?v=1794000555';
+import { M, B, neon, glow, onNight, signMesh, PI, goldM, chromeM, canvas, tex, pbr, rep, T, rng } from './core.js?v=1794015301';
+import { rect, arcBand, inset, Batch, facade } from './city.js?v=1794015301';
+import { carParts, carMats } from './cars.js?v=1794015301';
 
 const UP = new THREE.Vector3(0, 1, 0);
 function bar(b, mat, ax, ay, az, bx, by, bz, r = 0.3, seg = 6) { const a = new THREE.Vector3(ax, ay, az), c = new THREE.Vector3(bx, by, bz), L = a.distanceTo(c), g = new THREE.CylinderGeometry(r, r, L, seg, 1);

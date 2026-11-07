@@ -57,7 +57,18 @@ export function buildTripWorld(G, A) { // A: { onVenue(key), onSteak(), onShower
     L.aabbs.push([6.15, 7.05, -2.65, -1.75]);
     L.interacts.push({ x: 6.6, z: -2.2, r: 2.4, when: () => A.quest() === 0, label: 'Ask lobby security about your wallet 🕵️', act: () => A.onClue(0) });
     out.npcs.boss = person('lobby', { body: 'f', face: 'businessf01', outfit: '#111111', style: 'solid', role: 'business' }, 45.4, 9.6, -Math.PI / 2 - 0.5, 'fold');
-    L.interacts.push({ x: 45.4, z: 9.6, r: 2.3, when: () => A.quest() === 1, label: 'Ask the pit boss about the flamingo jacket 🦩', act: () => A.onClue(1) }); }
+    L.interacts.push({ x: 45.4, z: 9.6, r: 2.3, when: () => A.quest() === 1, label: 'Ask the pit boss about the flamingo jacket 🦩', act: () => A.onClue(1) });
+    // v8.1: Kingdom Café (north-west corner of the lobby): breakfast all day, coffee, the buffet
+    const wood = M(0x4a2e18, { roughness: 0.5 }), marbleTop = M(0xf0ebe2, { roughness: 0.2 });
+    bx(g, wood, -16.4, 0, -19.5, 1.0, 1.08, 6.4); bx(g, marbleTop, -16.4, 1.08, -19.5, 1.15, 0.06, 6.6); bx(g, dark, -19.3, 0, -19.5, 0.5, 2.4, 6.8);
+    for (let k = 0; k < 5; k++) cy(g, M([0xd8b070, 0x8a5a2a, 0xf4e8d0][k % 3], { roughness: 0.4 }), -19.3, 2.42, -22.2 + k * 1.3, 0.12, 0.28, 12); // jars on the back counter
+    bx(g, chrome, -16.6, 1.14, -21.8, 0.45, 0.45, 0.4); // espresso machine
+    for (const z of [-22, -19.5, -17]) { const pl = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), M(0xfff0c8, { emissive: 0xffc070, emissiveIntensity: 1.2 })); pl.position.set(-16.4, 3.1, z); g.add(pl); cy(g, dark, -16.4, 3.3, z, 0.01, 2.6, 4); }
+    sign(g, ['KINGDOM CAFÉ', 'open 24/7 · breakfast all day · the buffet'], -19.42, 3.9, -19.5, 5.6, 1.3, Math.PI / 2);
+    for (const [x, z] of [[-12.6, -21], [-12.6, -17.6]]) { cy(g, M(0x0e0d0c), x, 0, z, 0.06, 0.74, 8); cy(g, marbleTop, x, 0.74, z, 0.55, 0.05, 18); for (const dx of [-0.85, 0.85]) cy(g, M(0x7a1020), x + dx, 0, z, 0.22, 0.48, 12); L.aabbs.push([x - 0.6, x + 0.6, z - 0.6, z + 0.6]); }
+    L.aabbs.push([-17, -15.8, -22.8, -16.2], [-19.6, -19, -23, -16]);
+    out.npcs.barista = person('lobby', { body: 'f', face: 'femalea03', outfit: '#4a2e18', style: 'solid', cut: 'tee' }, -18.1, -19.5, Math.PI / 2, 'talk');
+    L.interacts.push({ x: -15, z: -19.5, r: 2.4, label: 'Kingdom Café · breakfast, coffee, the buffet ☕', act: () => A.onVenue('cafe') }); }
 
   // ---------- Suite 2407: rain shower with a Strip view ----------
   { const R = areas.room, g = R.group, glass = new THREE.MeshPhysicalMaterial({ color: 0xc8d8e0, transparent: true, opacity: 0.25, roughness: 0.05, depthWrite: false, side: THREE.DoubleSide });
@@ -67,7 +78,10 @@ export function buildTripWorld(G, A) { // A: { onVenue(key), onSteak(), onShower
     sign(g, ['RAIN SHOWER'], 6, 3.6, -9.88, 1.8, 0.4, 0);
     R.aabbs.push([4.35, 7.6, -9.8, -6.85]);
     R.interacts.push({ x: 3.4, z: -7.7, r: 1.7, label: 'Hot rain shower (30 min) 🚿', act: () => A.onShower() });
-    const bed = R.interacts.find(i => i.label === 'Lie down (rest)'); if (bed) { bed.label = 'Bed · nap or sleep 😴'; bed.act = () => A.onBed(); } }
+    const bed = R.interacts.find(i => i.label === 'Lie down (rest)'); if (bed) { bed.label = 'Bed · nap or sleep 😴'; bed.act = () => A.onBed(); }
+    // v8.1: room service (the phone on the nightstand)
+    bx(g, dark, 0.75, 1.0, -6.15, 0.3, 0.07, 0.2); bx(g, gold, 0.75, 1.07, -6.15, 0.26, 0.04, 0.06);
+    R.interacts.push({ x: 1.5, z: -5.1, r: 1.3, label: 'Room service 🛎️ (phone)', act: () => A.onVenue('roomservice') }); }
 
   // ---------- Mega Club: DJ gigs, Thunder From the Kingdom ----------
   { const C = areas.club, g = C.group;

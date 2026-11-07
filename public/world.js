@@ -1,13 +1,13 @@
 // The Strip: road, sidewalks, parody lookalike landmarks (procedural PBR architecture), Tileo Kingdom tower
 import * as THREE from 'three';
 import { Water } from 'three/addons/objects/Water.js';
-import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, chromeM, canvas, tex, logoMaterial, logoReady, LOGOS , pbr } from './core.js?v=1794000555';
-import { makeLion, makeCharacter, randomLook, animate } from './characters.js?v=1794000555';
-import { STY, facade, roofMat, rect, circle, arcBand, stadium, inset, Batch, streetTex, palms as palmKit, carKitGeo } from './city.js?v=1794000555';
-import { carParts, carMats } from './cars.js?v=1794000555';
-import { buildGrounds } from './landscape.js?v=1794000555';
-import { buildLandmarks8 } from './strip8.js?v=1794000555';
-import { Q } from './quality.js?v=1794000555';
+import { G, M, B, add, box, cyl, plane, T, rep, glow, neon, onNight, signMesh, rng, PI, logoPlane, goldM, chromeM, canvas, tex, logoMaterial, logoReady, LOGOS , pbr } from './core.js?v=1794015301';
+import { makeLion, makeCharacter, randomLook, animate } from './characters.js?v=1794015301';
+import { STY, facade, roofMat, rect, circle, arcBand, stadium, inset, Batch, streetTex, palms as palmKit, carKitGeo } from './city.js?v=1794015301';
+import { carParts, carMats } from './cars.js?v=1794015301';
+import { buildGrounds } from './landscape.js?v=1794015301';
+import { buildLandmarks8 } from './strip8.js?v=1794015301';
+import { Q } from './quality.js?v=1794015301';
 
 export function facadeMat(color, w, h, d, lit = 0xffd98f, nightI = 1) {
   const mk = (rx) => { const m = new THREE.MeshStandardMaterial({ color, map: rep(T.facade, rx / 6, h / 5), emissive: lit, emissiveMap: rep(T.facadeE, rx / 6, h / 5), emissiveIntensity: nightI, roughness: 0.55, metalness: 0.2 });

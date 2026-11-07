@@ -2,7 +2,9 @@
 // Play money only; every resort, show and brand here is a fictional parody.
 
 export const START_MIN = 10 * 60;            // Day 1, 10:00 AM (minutes since Day 1 midnight)
-export const END_MIN = 4 * 1440 + 12 * 60;   // Day 5, 12:00 PM checkout
+export const END_MIN = 4 * 1440 + 12 * 60;   // Day 5, 12:00 PM checkout (v8.1: then make the 4 PM flight home)
+export const WALLET0 = 1000, WALLET_BACK = 300; // v8.1: everyone lands with $1,000; a pickpocket takes the wallet right after check-in; recovering it returns what's left
+export const AIRPORT_BY = 3 * 60, FLIGHT_AT = 4 * 60, EXTEND_COST = 150, EXTEND_MAX = 2; // be at the airport 3 h after checkout; extend the stay up to 2 nights
 export const SPEEDS = [0.5, 1, 2];           // 1× = one real minute per game hour
 
 export const TRIP_TYPES = {
@@ -12,14 +14,14 @@ export const TRIP_TYPES = {
 };
 
 export const BACKSTORIES = {
-  divorcee: { n: 'Newly Single Divorcee', icon: '💔', cash: 85, perk: 'Alimony Splurge', perkD: '+25% Fun and Vibe from cocktails, steak dinners and VIP bottle service.',
+  divorcee: { n: 'Newly Single Divorcee', icon: '💔', cash: 85, pocket: 'tucked in your blazer pocket', perk: 'Alimony Splurge', perkD: '+25% Fun and Vibe from cocktails, steak dinners and VIP bottle service.',
     story: 'You signed the divorce papers at 8 AM, threw the wedding ring into the airport fountain, and landed in Vegas ready for chaos. Then the airline lost your designer bags.' },
-  dj: { n: 'Aspiring DJ', icon: '🎧', cash: 55, perk: 'Booth Plug', perkD: '+45% pay and a wider timing window on DJ Booth gigs, +50% Fun from dancing in the club.',
+  dj: { n: 'Aspiring DJ', icon: '🎧', cash: 55, pocket: 'folded in your phone case', perk: 'Booth Plug', perkD: '+45% pay and a wider timing window on DJ Booth gigs, +50% Fun from dancing in the club.',
     story: 'You flew in hoping to open for DJ Tileo at the Mega Club. The budget airline sent your custom dubplate crate to Boise.' },
-  influencer: { n: 'Clout-Chasing Influencer', icon: '🤳', cash: 65, perk: 'Do It For The Plot', perkD: '2× cash and Fun from Photo Gigs, +15 Style and Charm on every outfit.',
-    story: 'You promised your followers a luxury high-roller weekend vlog, then got pickpocketed at baggage claim and lost your ring-light suitcase.' },
-  party: { n: 'Unstoppable Party Animal', icon: '🦁', cash: 50, perk: 'Iron Liver & Second Wind', perkD: 'Your Buzz sweet spot stretches to 78% and nighttime Energy drains 35% slower.',
-    story: "You woke up riding baggage carousel 11 in yesterday's wrinkled plane clothes, with $50 stuffed in a neon fanny pack and a prepaid suite voucher." },
+  influencer: { n: 'Clout-Chasing Influencer', icon: '🤳', cash: 65, pocket: 'in your ring-light pouch', perk: 'Do It For The Plot', perkD: '2× cash and Fun from Photo Gigs, +15 Style and Charm on every outfit.',
+    story: 'You promised your followers a luxury high-roller weekend vlog. The airline promptly lost your ring-light suitcase.' },
+  party: { n: 'Unstoppable Party Animal', icon: '🦁', cash: 50, pocket: 'stuffed in your neon fanny pack', perk: 'Iron Liver & Second Wind', perkD: 'Your Buzz sweet spot stretches to 78% and nighttime Energy drains 35% slower.',
+    story: "You woke up riding baggage carousel 11 in yesterday's wrinkled plane clothes, with a fat wallet, $50 stuffed in a neon fanny pack and a prepaid suite voucher." },
 };
 
 // Besties: looks use the realistic faces from the people library; loves drive their Mood
@@ -63,6 +65,37 @@ export const ITEMS = {
   cocktail: { n: 'Signature Cocktail', icon: '🍸', price: 15, d: 'Buzz + Fun (costs Hydration)', fx: { buzz: 18, hyd: -8 }, fun: 25, vibe: 4, booze: true, splurge: true },
   marg: { n: '3-Foot Neon Margarita', icon: '🍹', price: 24, d: 'Big Buzz + Fun (costs Hydration)', fx: { buzz: 28, hyd: -12 }, fun: 45, vibe: 6, booze: true, splurge: true },
   steak: { n: 'Prime Tomahawk Steak Dinner', icon: '🥩', price: 45, d: '1.5 h · maxes Hunger, massive Vibe + Fun', fx: { hunger: 100, energy: 10 }, fun: 150, vibe: 25, hours: 1.5, splurge: true },
+  // v8.1: more food (and a few more drinks) on every menu, plus room service, the Kingdom Café and airport snacks
+  surfturf: { n: 'Surf & Turf (filet + lobster tail)', icon: '🦞', price: 65, d: '1.5 h · maxes Hunger, huge Vibe + Fun', fx: { hunger: 100, energy: 15 }, fun: 180, vibe: 28, hours: 1.5, splurge: true, as: 'steak', msg: "🦞 Surf & Turf at the Lion's Den: buttery lobster, perfect filet. Hunger maxed." },
+  buffet: { n: 'Kingdom Buffet (all you can eat)', icon: '🍽️', price: 39, d: '1 h · crab legs, prime rib, dessert wall: maxes Hunger, Energy + Vibe', fx: { hunger: 100, energy: 18 }, fun: 80, vibe: 12, hours: 1, msg: '🍽️ The Kingdom Buffet: crab legs, prime rib, a chocolate fountain. You regret nothing.' },
+  nachos: { n: 'Loaded Nachos', icon: '🧀', price: 12, d: 'Shareable Hunger + Fun', fx: { hunger: 38, energy: 6 }, fun: 18 },
+  wings: { n: 'Buffalo Wings', icon: '🍗', price: 16, d: 'Saucy Hunger + Energy', fx: { hunger: 45, energy: 10, hyd: -4 }, fun: 22 },
+  sliders: { n: 'Wagyu Sliders', icon: '🍔', price: 22, d: 'Big Hunger, a little Vibe', fx: { hunger: 55, energy: 12 }, fun: 30, vibe: 4, splurge: true },
+  fries: { n: 'Truffle Fries', icon: '🍟', price: 9, d: 'Quick Hunger', fx: { hunger: 25 }, fun: 10 },
+  pizza: { n: 'NY Pizza Slice', icon: '🍕', price: 7, d: 'Cheap, fast Hunger', fx: { hunger: 30, energy: 5 }, fun: 10 },
+  hotdog: { n: 'Strip Hot Dog', icon: '🌭', price: 7, d: 'Street-cart classic', fx: { hunger: 28, energy: 4 }, fun: 8 },
+  churros: { n: 'Churros & Chocolate', icon: '🥖', price: 9, d: 'Sweet Hunger + a little Vibe', fx: { hunger: 18, energy: 6 }, fun: 15, vibe: 4 },
+  pretzel: { n: 'Giant Soft Pretzel', icon: '🥨', price: 8, d: 'Airport-sized snack', fx: { hunger: 28 }, fun: 8 },
+  shrimp: { n: 'Jumbo Shrimp Cocktail', icon: '🍤', price: 19, d: 'Old-Vegas classic, Vibe up', fx: { hunger: 25, energy: 5 }, fun: 22, vibe: 5, splurge: true },
+  salad: { n: 'Grilled Chicken Caesar', icon: '🥗', price: 15, d: 'Light Hunger + Energy, a little Hydration', fx: { hunger: 35, energy: 12, hyd: 6 }, fun: 10 },
+  poke: { n: 'Ahi Poke Bowl', icon: '🐟', price: 18, d: 'Fresh: Hunger + Energy + Hydration', fx: { hunger: 45, energy: 14, hyd: 10 }, fun: 15 },
+  sushi: { n: 'Sushi Platter', icon: '🍣', price: 34, d: 'Big Hunger, Vibe up', fx: { hunger: 55, energy: 12, hyd: 5 }, fun: 40, vibe: 8, splurge: true },
+  lobster: { n: 'Lobster Mac & Cheese', icon: '🦞', price: 28, d: 'Rich comfort food', fx: { hunger: 60, energy: 10 }, fun: 35, vibe: 6, splurge: true },
+  breakfast: { n: 'Big Vegas Breakfast', icon: '🍳', price: 19, d: 'Eggs, bacon, hash browns: big Hunger + Energy', fx: { hunger: 70, energy: 20 }, fun: 20 },
+  pancakes: { n: 'Pancake Tower', icon: '🥞', price: 14, d: 'Syrup-soaked Hunger + Energy', fx: { hunger: 50, energy: 14 }, fun: 18, vibe: 3 },
+  benny: { n: 'Eggs Benedict', icon: '🥚', price: 17, d: 'Brunch classic', fx: { hunger: 50, energy: 16 }, fun: 15 },
+  bloody: { n: 'Bloody Mary', icon: '🍅', price: 14, d: 'Brunch Buzz + a little Hunger', fx: { buzz: 14, hunger: 8, hyd: -4 }, fun: 20, booze: true },
+  coffee: { n: 'Iced Coffee', icon: '☕', price: 6, d: 'Energy boost', fx: { energy: 18, hyd: 4 }, fun: 4 },
+  energy: { n: 'Energy Drink', icon: '⚡', price: 7, d: 'Big Energy jolt (costs Hydration)', fx: { energy: 26, hyd: -6 }, fun: 6 },
+  lemonade: { n: 'Fresh Lemonade', icon: '🍋', price: 6, d: 'Hydration up', fx: { hyd: 30, buzz: -5 }, fun: 5 },
+  mocktail: { n: 'Virgin Piña Colada', icon: '🍍', price: 9, d: 'Hydration + Vibe, zero Buzz', fx: { hyd: 22, buzz: -6 }, fun: 12, vibe: 3 },
+  beer: { n: 'Ice-Cold Beer', icon: '🍺', price: 8, d: 'Easy Buzz + Fun', fx: { buzz: 12, hyd: -4 }, fun: 15, vibe: 2, booze: true },
+  champ: { n: 'Glass of Champagne', icon: '🥂', price: 18, d: 'Classy Buzz + Vibe', fx: { buzz: 14, hyd: -5 }, fun: 30, vibe: 6, booze: true, splurge: true },
+  msnack: { n: 'Minibar Snack Box', icon: '🍫', price: 15, d: 'Chocolate, nuts, regret', fx: { hunger: 22 }, fun: 6 },
+  rsburger: { n: 'Room-Service Burger & Fries', icon: '🍔', price: 26, d: 'Under a silver dome', fx: { hunger: 60, energy: 14 }, fun: 25, vibe: 4 },
+  rspizza: { n: 'Whole Pizza', icon: '🍕', price: 30, d: 'Share it, or don\'t', fx: { hunger: 70, energy: 12 }, fun: 30 },
+  rsclub: { n: 'Club Sandwich', icon: '🥪', price: 21, d: 'The 3 AM classic', fx: { hunger: 50, energy: 10 }, fun: 15 },
+  rsdessert: { n: 'Chocolate Lava Cake', icon: '🍰', price: 16, d: 'Vibe up', fx: { hunger: 20 }, fun: 20, vibe: 6 },
   mwater: { n: 'Minibar Water (it\'s Vegas)', icon: '💧', price: 9, d: 'Same water, worse price', fx: { hyd: 35, buzz: -15 }, cure: 'water', as: 'water' },
   mshot: { n: 'Minibar Mini-Bottles', icon: '🍾', price: 22, d: 'Buzz + Fun, suite prices', fx: { buzz: 18, hyd: -8 }, fun: 25, vibe: 4, booze: true, splurge: true, as: 'cocktail' },
 };
@@ -74,13 +107,16 @@ export const STASH_FX = {
   water: { fx: { hyd: 35, buzz: -15 }, cure: true, msg: '💧 Cold water from the bar cart.' },
 };
 export const VENUES = {
-  lionbar: { n: 'Lion Lounge Bar', icon: '🦁', items: ['water', 'cocktail', 'burger'], gig: true },
-  steak: { n: "Lion's Den Steakhouse", icon: '🥩', items: ['steak', 'water'] },
-  'swim-up bar': { n: 'Swim-Up Bar', icon: '🏝️', items: ['water', 'cocktail', 'marg', 'smoothie'], gig: true },
-  'tiki bar': { n: 'Tiki Bar', icon: '🌺', items: ['water', 'cocktail', 'marg', 'smoothie', 'burger'], gig: true },
-  'Tiger Bar': { n: 'Tiger Bar · Mega Club', icon: '🐯', items: ['water', 'cocktail', 'marg'], gig: true },
-  minibar: { n: 'Suite Minibar', icon: '🧊', items: ['mwater', 'mshot'] },
-  cart: { n: 'Late-Night Taco & Water Cart', icon: '🌮', items: ['water', 'tacos'] },
+  lionbar: { n: 'Lion Lounge Bar', icon: '🦁', items: ['water', 'lemonade', 'beer', 'cocktail', 'champ', 'burger', 'sliders', 'wings', 'nachos', 'shrimp', 'fries'], gig: true },
+  steak: { n: "Lion's Den Steakhouse", icon: '🥩', items: ['steak', 'surfturf', 'lobster', 'shrimp', 'salad', 'champ', 'water'] },
+  'swim-up bar': { n: 'Swim-Up Bar', icon: '🏝️', items: ['water', 'lemonade', 'mocktail', 'beer', 'cocktail', 'marg', 'smoothie', 'poke', 'fries'], gig: true },
+  'tiki bar': { n: 'Tiki Bar', icon: '🌺', items: ['water', 'mocktail', 'cocktail', 'marg', 'smoothie', 'burger', 'hotdog', 'nachos', 'poke'], gig: true },
+  'Tiger Bar': { n: 'Tiger Bar · Mega Club', icon: '🐯', items: ['water', 'energy', 'beer', 'cocktail', 'marg', 'champ', 'sliders', 'fries'], gig: true },
+  minibar: { n: 'Suite Minibar', icon: '🧊', items: ['mwater', 'mshot', 'msnack'] },
+  cart: { n: 'Late-Night Taco & Water Cart', icon: '🌮', items: ['water', 'tacos', 'hotdog', 'churros', 'lemonade'] },
+  cafe: { n: 'Kingdom Café · open 24/7', icon: '☕', items: ['coffee', 'breakfast', 'pancakes', 'benny', 'bloody', 'salad', 'pizza', 'churros', 'smoothie', 'buffet', 'water'] },
+  roomservice: { n: 'Room Service · Suite 2407', icon: '🛎️', items: ['breakfast', 'pancakes', 'coffee', 'rsclub', 'rsburger', 'rspizza', 'sushi', 'lobster', 'rsdessert', 'champ', 'water'] },
+  snacks: { n: 'Sin City Snacks (airport)', icon: '🥨', items: ['coffee', 'pretzel', 'pizza', 'energy', 'water'] },
 };
 
 // Wish lists: 5 per trip, by trip type (the 5th slot of friend trips is the bestie's own wish)

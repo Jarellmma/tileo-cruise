@@ -1,23 +1,23 @@
 // TILEO KINGDOM: Strip Life, playable prototype (Three.js, no build step)
 import * as THREE from 'three';
-import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1794000555';
-import { Q, initQuality, setMode, TIERS } from './quality.js?v=1794000555';
-import { createGfx, LOOK } from './gfx.js?v=1794000555';
-import { createAmbience } from './ambience.js?v=1794000555';
-import { createMusic, SONGS, LISTS, STATIONS, station } from './music.js?v=1794000555';
-import { initCasino } from './casino.js?v=1794000555';
-import { initNet } from './net.js?v=1794000555';
-import { initCompanion } from './companion.js?v=1794000555';
-import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1794000555';
-import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1794000555';
-import { PEOPLE_BASES } from './people_data.js?v=1794000555';
-import { buildStrip, updateWaters } from './world.js?v=1794000555';
-import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1794000555';
-import { buildLimo } from './limo.js?v=1794000555';
-import { initPhoto } from './photo.js?v=1794000555';
-import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1794000555';
-import { buildAirport, AIRPORT_DOOR } from './airport.js?v=1794000555';
-import { createArrival } from './arrival.js?v=1794000555';
+import { T, buildTextures, nightFx, PI, G, logoReady, logoMaterial, TODS } from './core.js?v=1794015301';
+import { Q, initQuality, setMode, TIERS } from './quality.js?v=1794015301';
+import { createGfx, LOOK } from './gfx.js?v=1794015301';
+import { createAmbience } from './ambience.js?v=1794015301';
+import { createMusic, SONGS, LISTS, STATIONS, station } from './music.js?v=1794015301';
+import { initCasino } from './casino.js?v=1794015301';
+import { initNet } from './net.js?v=1794015301';
+import { initCompanion } from './companion.js?v=1794015301';
+import { makeCharacter, applyLook, animate, makeCar, BAND_C, STYLES, HAIRSTYLES, HAIR_NAMES, EMOTES, CHAR, rigReady, rigStatus, syncCharacters, PEOPLE, FACES, peopleReady, setPeople } from './characters.js?v=1794015301';
+import { FACE_NAMES, GLASSES, faceFor } from './people.js?v=1794015301';
+import { PEOPLE_BASES } from './people_data.js?v=1794015301';
+import { buildStrip, updateWaters } from './world.js?v=1794015301';
+import { buildNeedle, NX as NEEDLE_X, NZ as NEEDLE_Z } from './needle.js?v=1794015301';
+import { buildLimo } from './limo.js?v=1794015301';
+import { initPhoto } from './photo.js?v=1794015301';
+import { buildLobby, buildPool, buildRooms, buildRoom, buildClub, SKYLINE_CREDITS } from './interiors.js?v=1794015301';
+import { buildAirport, AIRPORT_DOOR } from './airport.js?v=1794015301';
+import { createArrival } from './arrival.js?v=1794015301';
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window; if (isTouch) document.body.classList.add('touch');
@@ -83,11 +83,14 @@ const airport = defArea('airport', { label: 'Sin City International · Baggage C
   rects: [[-33.5, 33.5, -31.6, 25.6], [-3.4, 3.4, 25, 27.3], [-42, 42, 26.6, 33.5]], ceiling: 9.4, music: 'airport', vol: 0.32 });
 let arrival = null;
 buildAirport(airport, { limoShell: limo.makeShell('white'), timeNow: () => (arrival ? arrival.time() : { h: 10, m: 0 }), grabBag: () => arrival.grabBag(), shop: () => arrival.shop(), services: () => arrival.services(), slots: () => openSlots(),
-  limoLabel: () => arrival.limoLabel(), limoRide: () => arrival.limoRide(), toStrip: () => arrival.toStrip(), bagLabel: () => arrival.bagLabel(), shopLabel: () => arrival.shopLabel(), servicesLabel: () => arrival.servicesLabel() });
+  limoLabel: () => arrival.limoLabel(), limoRide: () => arrival.limoRide(), toStrip: () => arrival.toStrip(), bagLabel: () => arrival.bagLabel(), shopLabel: () => arrival.shopLabel(), servicesLabel: () => arrival.servicesLabel(),
+  counter: () => arrival.counter(), snacks: () => { if (trip) return trip.openVenue('snacks'); if (save.coins < 12) return toast('Not enough coins for a snack.'); setCoins(save.coins - 12); toast('🥨 A giant pretzel and an iced coffee for the road (-12 coins).'); }, counterLabel: () => (trip && trip.counterLabel ? trip.counterLabel() : 'Budget Air · Departures ✈️') });
 C5.onArrive = name => { if (arrival) arrival.onLimoArrive(name); };
-arrival = createArrival({ $, state, player, cam, save, prefs, areas, limo, strip, toast, transition, enterArea, showUI, closeUI, setCoins, persist, openSlots, updateCamera: d => updateCamera(d), syncButtons, renderMini, parkCar });
+C5.dropAt = name => (name === 'Sin City International' ? { area: 'airport', ...AIRPORT_DOOR, msg: '✈️ Your chauffeur drops you right at the terminal doors.' } : null);
 const photo = initPhoto(C5);
 const comp = initCompanion({ scene, player, car, state, limo, toast, isTouch });
+arrival = createArrival({ $, state, player, cam, save, prefs, areas, limo, strip, comp, toast, transition, enterArea, showUI, closeUI, setCoins, persist, openSlots, updateCamera: d => updateCamera(d), syncButtons, renderMini, parkCar });
+{ const fd = lobby.interacts.find(i => Math.abs(i.x + 12.6) < 0.01 && Math.abs(i.z) < 0.01); if (fd) { const L0 = fd.label; fd.label = () => (arrival && arrival.active ? 'Check in with the concierge 🛎️ (the bellman takes your bags)' : typeof L0 === 'function' ? L0() : L0); } }
 const UI_CLOSE = { people: () => { const i = $('chatIn'); if (i) i.blur(); }, photo: () => photo.close(), binoc: () => { needle.closeBinoc(); document.body.classList.remove('binocMode'); }, gallery: () => {}, cine: () => {} };
 
 function enterArea(id, x, z, yaw) {
@@ -322,6 +325,7 @@ function exitToStrip() { if (state.walkTo) state.walkTo = null; if (state.enteri
 function enterCar() { if (state.ride) return; state.driving = true; state.emote = null; toggleWheel(false); state.air = false; state.jy = 0; setTimeout(syncButtons); player.visible = true; state.carHeading = car.rotation.y; cam.dist = 11; toast('Convertible rented: W/S or joystick to drive, A/D to steer. Car radio on.'); setMusic(); }
 function exitCar() { state.driving = false; state.carSpeed = 0; const h = state.carHeading; player.position.set(car.position.x + Math.cos(h) * 2.2, 0, car.position.z - Math.sin(h) * 2.2); player.rotation.set(0, h, 0); cam.dist = 7; toggleLights(false); syncButtons(); setMusic(); }
 function checkIn() {
+  if (arrival && arrival.active) arrival.concierge(); // v8.1: the concierge checks you in and the bellman takes your bags up
   const L = save.look;
   if (!save.room) { save.room = 2401 + Math.floor(Math.random() * 10); L.banded = true; applyLook(player, L); persist(); updateBand();
     toast(`Welcome to TILEO KINGDOM, ${L.name}. Suite ${save.room} on floor 24. Your Kingdom wristband is on: take the elevator to Floor 24.`); }
@@ -626,7 +630,7 @@ async function startTripMode() {
   Object.assign(save, ts && ts.look ? ts : { coins: 0, owned: ['solid'], room: 2407, bonusDay: '', look: { ...fpLook, style: 'solid', banded: true } });
   save.owned = ['solid']; save.room = 2407;
   showLoading(0.7, 'Packing for Vegas…');
-  try { const m = await import('./trip/trip.js?v=1794000555');
+  try { const m = await import('./trip/trip.js?v=1794015301');
     trip = await m.initTrip({ $, THREE, state, player, car, cam, camera, scene, save, prefs, savePrefs, areas, strip, lobby, pool, rooms, room, club, needleA, ctx, C5, comp, limo, needle, photo, gfx, amb, net, isTouch,
       toast, setCoins, persist, transition, enterArea, showUI, closeUI, setTod, applyLook, makeCharacter, animate, STYLES, EMOTES, CHAR, waterDepth, blocked, safeSpot, inRect, teleport, updateBand, syncButtons, renderMini,
       updateCamera: d => updateCamera(d), faceFor, beginPlay, openCreator, buildCreator, setEmote, parkCar, exitCar, lmk, tpBusy: () => tpBusy, keys, joy, arrival, airport }); }
