@@ -279,7 +279,9 @@ input[type=range]{accent-color:var(--coral);width:140px}
 .meters i{display:block;height:5px;border-radius:3px;background:rgba(255,255,255,.14);overflow:hidden}
 .meters b{display:block;height:100%;width:70%;background:var(--lagoon);border-radius:3px;transition:width .5s}
 .meters #mFull{background:var(--brass)}
-.meters b.low{background:var(--coral)!important}
+.meters b.low{background:var(--coral)!important;min-width:4px;animation:mlow 1.2s ease-in-out infinite}
+@keyframes mlow{50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.meters b.low{animation:none}}
 .np{display:flex;align-items:center;gap:8px;max-width:min(64vw,260px);background:rgba(8,22,44,.62);border:1px solid var(--line);border-radius:12px;padding:5px 10px 5px 5px;align-self:flex-start;animation:tin .35s ease both}
 .np img{width:30px;height:30px;border-radius:7px;object-fit:cover;flex:none}
 .np span{min-width:0}
@@ -521,6 +523,6 @@ input[type=range]{accent-color:var(--coral);width:140px}
 <script src="vendor/SkeletonUtils.js"></script>
 <script src="vendor/p2p.js"></script>
 <script src="config.js?v=1a8596799f"></script>
-<script src="js/tileo.js?v=13cd194c48"></script>
+<script src="js/tileo.js?v=dc343b79e4"></script>
 </body>
 </html>

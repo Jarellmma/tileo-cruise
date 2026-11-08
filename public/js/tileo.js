@@ -1392,7 +1392,8 @@ function buildSuperstructure(ship) {
     for (const c of CARVE) if (c.k.includes(k)) holes.push(rectPts(c.x0, c.z0, c.x1, c.z1));
     B.push('white', extrudeY(deck, holes, y - 0.32, y, 40));
   }
-  B.push('white', extrudeY(deck, [offsetPoly(deck, -2.4), canyonHole], 51.6, 51.97, 40));
+  // edge slab under the Deck 15 rim: a ring only (a hole inside its hole broke the triangulation and lid part of the pool)
+  B.push('white', extrudeY(deck, [offsetPoly(deck, -2.4)], 51.6, 51.97, 40));
   // window ribbons around the bow face, per level
   for (let k = 0; k <= 9; k++) {
     const y = 20 + 3 * k;
@@ -2502,9 +2503,44 @@ function gridLOS(g, ka, kb) {
   }
   return true;
 }
+// all walkable cells inside an area (cached per grid and area)
+const _cellsIn = new WeakMap();
+function cellsIn(g, poly) {
+  let m = _cellsIn.get(g); if (!m) _cellsIn.set(g, m = new Map());
+  let list = m.get(poly); if (list) return list;
+  list = []; const bb = bbOf(poly);
+  const i0 = Math.max(0, Math.floor((bb[0] - g.x0) / g.cell)), i1 = Math.min(g.nx - 1, Math.floor((bb[2] - g.x0) / g.cell));
+  const j0 = Math.max(0, Math.floor((bb[1] - g.z0) / g.cell)), j1 = Math.min(g.nz - 1, Math.floor((bb[3] - g.z0) / g.cell));
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const k = i + j * g.nx; if (isNaN(g.ys[k])) continue; const [x, , z] = gridPos(g, k); if (pip(x, z, poly)) list.push(k); }
+  m.set(poly, list); return list;
+}
 function randomCellIn(g, poly) {
-  for (let tries = 0; tries < 60; tries++) { const k = g.valid[Math.floor(Math.random() * g.valid.length)]; const [x, , z] = gridPos(g, k); if (!poly || pip(x, z, poly)) return k; }
+  if (!poly) return g.valid[Math.floor(Math.random() * g.valid.length)];
+  const list = cellsIn(g, poly);
+  if (list.length) return list[Math.floor(Math.random() * list.length)];
   const bb = bbOf(poly); return nearestValid(g, (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, 20);
+}
+// a free place in an area: at least `gap` metres from everyone else's chosen place; sometimes next to
+// another dancer so people dance in small groups instead of alone or in a heap
+function spacedCellIn(g, poly, self, gap = 1.0, groupChance = 0) {
+  const list = cellsIn(g, poly); if (!list.length) return { k: randomCellIn(g, poly) };
+  const others = [];
+  for (const n of NPCS) if (n !== self && n.target && n.level === self.level) others.push(n.target);
+  if (Player.pos && Player.level === self.level) others.push([Player.pos.x, Player.pos.z]);
+  const free = (x, z) => others.every(o => (o[0] - x) * (o[0] - x) + (o[1] - z) * (o[1] - z) >= gap * gap);
+  if (groupChance && Math.random() < groupChance) {
+    const near = others.filter(o => pip(o[0], o[1], poly));
+    if (near.length) {
+      const o = near[Math.floor(Math.random() * near.length)];
+      for (let t = 0; t < 14; t++) {
+        const a = Math.random() * TAU, r = 1.1 + Math.random() * 0.7, k = gridIdx(g, o[0] + Math.cos(a) * r, o[1] + Math.sin(a) * r);
+        if (k < 0 || isNaN(g.ys[k])) continue; const [x, , z] = gridPos(g, k);
+        if (pip(x, z, poly) && free(x, z)) return { k, face: o };
+      }
+    }
+  }
+  for (let t = 0; t < 40; t++) { const k = list[Math.floor(Math.random() * list.length)], [x, , z] = gridPos(g, k); if (free(x, z)) return { k }; }
+  return { k: list[Math.floor(Math.random() * list.length)] };
 }
 
 /* ---- 23_venues.js ---- */
@@ -4508,6 +4544,22 @@ const NPC_LOOKS = [
   { b: 'mtank', f: 'malea09', t: '#8a5cf6', o: '#f4f1e8' }, { b: 'ftee', f: 'sportsf02', t: '#f4f1e8', o: '#10264a' }, { b: 'mtrunks', f: 'malea16', o: '#ff6a55' }, { b: 'femalep02', h: 'sun' },
 ];
 const CREW_LOOKS = { captain: { b: 'pilotm03' }, bartend: [{ b: 'businessm04' }, { b: 'businessf01' }, { b: 'pilotf02' }], dj: [{ b: 'malea17', g: 'round' }, { b: 'malea04' }], port: { b: 'cheff01' } };
+// people who are standing about (dancing, watching a show, chatting) keep a little personal space
+const SEP_ANIMS = new Set(['dance', 'talk', 'cheer', 'idle', 'yoga', 'shootAim', 'shoot', 'wave']);
+function separateCrowd(dt) {
+  const L = NPCS.filter(n => n.state === 'act' && !n.spot && n.i < G.crowd.active && SEP_ANIMS.has(n.ch.anim));
+  const MIN = 0.85, push = Math.min(1, dt * 3);
+  for (let a = 0; a < L.length; a++) for (let b = a + 1; b < L.length; b++) {
+    const A = L[a], B = L[b]; if (A.level !== B.level) continue;
+    const dx = B.pos.x - A.pos.x, dz = B.pos.z - A.pos.z, d2 = dx * dx + dz * dz;
+    if (d2 >= MIN * MIN) continue;
+    const d = Math.sqrt(d2) || 0.01, ux = d2 ? dx / d : Math.cos(a * 2.4), uz = d2 ? dz / d : Math.sin(a * 2.4), m = (MIN - d) * 0.5 * push;
+    for (const [N, s] of [[A, -1], [B, 1]]) {
+      const nx = N.pos.x + ux * m * s, nz = N.pos.z + uz * m * s, k = gridIdx(N.grid, nx, nz);
+      if (k >= 0 && !isNaN(N.grid.ys[k])) { N.pos.x = nx; N.pos.z = nz; if (N.target) { N.target[0] = nx; N.target[1] = nz; } }
+    }
+  }
+}
 function realCrowdOn() { return typeof peopleSupported === 'function' && peopleSupported() && G.quality && G.quality.detail >= 1 && G.settings && G.settings.people !== false; }
 const _rc = [];
 function updateRealCrowd(dt) {
@@ -4583,7 +4635,7 @@ class NPC {
     _v1.copy(this.pos).sub(G.camera.position).normalize(); G.camera.getWorldDirection(_v2);
     return _v1.dot(_v2) > 0.35 || d < 18;
   }
-  release() { if (this.spot) { this.spot.taken = null; this.spot = null; } this.ch.held = null; }
+  release() { if (this.spot) { this.spot.taken = null; this.spot = null; } this.ch.held = null; this.target = null; }
   goTo(x, z, then, allowTeleport = true) {
     const g = this.grid; const path = findPath(g, this.pos.x, this.pos.z, x, z);
     if (!path) { this.task = null; this.timer = 1 + Math.random() * 3; this.state = 'idle'; return false; }
@@ -4707,9 +4759,12 @@ class NPC {
   }
   goDance(area, initial) {
     if (!area) return this.wander(initial);
-    const g = this.grid; const k = randomCellIn(g, area.poly); if (k < 0) return this.wander(initial);
-    const [x, , z] = gridPos(g, k);
-    const start = () => { this.state = 'act'; this.timer = mrand(40, 120); this.ch.setAnim('dance'); this.ch.danceStyle = Math.floor(Math.random() * 6); this.yaw = mrand(0, TAU); this.faceDance = area; };
+    const g = this.grid; const pick = spacedCellIn(g, area.poly, this, 1.05, 0.55), k = pick.k; if (k < 0) return this.wander(initial);
+    const [x, , z] = gridPos(g, k); this.target = [x, z];
+    const start = () => {
+      this.state = 'act'; this.timer = mrand(40, 120); this.ch.setAnim('dance'); this.ch.danceStyle = Math.floor(Math.random() * 6); this.faceDance = area;
+      this.yaw = pick.face ? Math.atan2(pick.face[0] - this.pos.x, pick.face[1] - this.pos.z) + mrand(-0.3, 0.3) : mrand(0, TAU);
+    };
     this.walkThen(x, z, start, initial);
   }
   goSlide(initial) {
@@ -4728,13 +4783,15 @@ class NPC {
       this.level = level; const sp = zone.spawn; this.pos.set(sp[0], sp[1], sp[2]);
     }
     const area = eventArea(ev);
-    const g = this.grid; const k = randomCellIn(g, area); if (k < 0) return this.wander(initial);
-    const [x, , z] = gridPos(g, k);
+    const g = this.grid, dancing = !['yoga', 'toast', 'trivia'].includes(ev.fx);
+    const pick = spacedCellIn(g, area, this, ev.fx === 'yoga' ? 1.9 : 1.05, dancing ? 0.45 : 0), k = pick.k; if (k < 0) return this.wander(initial);
+    const [x, , z] = gridPos(g, k); this.target = [x, z];
     const anim = ev.fx === 'yoga' ? 'yoga' : ev.fx === 'toast' ? 'idle' : ev.fx === 'trivia' ? (Math.random() < 0.6 ? 'talk' : 'cheer') : ev.fx === 'captain' ? (Math.random() < 0.5 ? 'talk' : 'dance') : 'dance';
     const go = () => {
       this.state = 'act'; this.timer = mrand(30, 90); this.ch.setAnim(anim); this.ch.danceStyle = Math.floor(Math.random() * 6);
       if (ev.fx === 'toast') this.ch.held = 'cup';
-      const c = eventFocus(ev); this.yaw = Math.atan2(c.x - this.pos.x, c.z - this.pos.z) + mrand(-0.4, 0.4);
+      const c = eventFocus(ev), f = pick.face && anim === 'dance' && Math.random() < 0.6 ? { x: pick.face[0], z: pick.face[1] } : c;
+      this.yaw = Math.atan2(f.x - this.pos.x, f.z - this.pos.z) + mrand(-0.4, 0.4);
     };
     if (initial || !this.visibleToPlayer()) { const gp = gridPos(g, k); this.pos.set(gp[0], gp[1], gp[2]); go(); return; }
     this.goTo(x, z, go, false);
@@ -4882,6 +4939,7 @@ function updateNPCs(dt) {
   }
   for (const s of Staff) { s.c.beat = Audio.beat(); s.c.update(dt, G.time); }
   if (G.captain.rig.root.visible) { G.captain.update(dt, G.time); }
+  separateCrowd(dt);
   G.crowd.sync();
   updateRealCrowd(dt);
 }
@@ -5363,8 +5421,8 @@ function updateFoodMeters(dt) {
   const st = foodState(), gm = dt * Clock.rate;
   const busy = Player.mode === 'swim' || (Player.activity && Player.activity.active) ? 1.6 : 1;
   const heat = G.port ? 1.2 : 1;
-  st.full = Math.max(0, st.full - 0.15 * gm * busy);
-  st.hyd = Math.max(0, st.hyd - 0.22 * gm * busy * heat);
+  st.full = Math.max(0, st.full - 0.075 * gm * busy);
+  st.hyd = Math.max(0, st.hyd - 0.11 * gm * busy * heat);
   for (const [k, label, hint] of [['full', 'Getting hungry', 'Grill, café and taco stands are on the Garden Promenade, Deck 8.'], ['hyd', 'Getting thirsty', 'Every bar pours free drinks and water.']]) {
     if (st[k] < 25 && Food.lastWarn[k] >= 25) toast(label, hint);
     if (st[k] < 5 && Food.lastWarn[k] >= 5) toast(k === 'full' ? 'Running on empty' : 'Very thirsty', 'You are slowing down. Grab something to ' + (k === 'full' ? 'eat.' : 'drink.'));
@@ -6637,9 +6695,16 @@ function updateFX(dt) {
     p.life -= dt;
     if (p.life <= 0) { p.s = damp(p.s, 0, 2, dt); if (p.s < 0.02) { F.m.setMatrixAt(i, zero); F.p[i] = null; continue; } }
     else p.s = damp(p.s, p.ts, 1.2, dt);
-    if (p.air) { p.vy -= 7 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; if (p.y < 52.2 + p.s * 0.4) { p.y = 52.2 + p.s * 0.35; p.air = false; } }
+    if (p.air) {
+      p.vy -= 7 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      // foam that lands in a pool floats flat on the water and melts away; on the deck it piles up
+      const w = p.y < 53.4 ? waterAt(p.x, p.z, p.y) : null;
+      if (w && p.y < w.top + 0.1) { p.air = false; p.water = w.top; p.ts *= 0.8; p.life = Math.min(p.life, mrand(6, 16)); }
+      else if (!w && p.y < 52.2 + p.s * 0.4) { p.y = 52.2 + p.s * 0.35; p.air = false; }
+    }
+    if (p.water !== undefined) p.y = p.water + p.s * 0.08;
     const sz = p.air ? Math.min(p.s, 0.3) : p.s;
-    _cp.set(p.x, p.y + Math.sin(t * 2 + i) * 0.03, p.z); _cs.set(sz, sz * 0.75, sz);
+    _cp.set(p.x, p.y + Math.sin(t * 2 + i) * 0.03, p.z); _cs.set(sz, p.water !== undefined ? sz * 0.22 : sz * 0.75, sz);
     F.m.setMatrixAt(i, _cm.compose(_cp, _cq.identity(), _cs));
   }
   F.m.instanceMatrix.needsUpdate = true;
