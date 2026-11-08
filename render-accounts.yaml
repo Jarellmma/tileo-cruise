@@ -1,0 +1,30 @@
+# Render Blueprint for TILEO Cruise accounts.
+# Links the multiplayer + accounts server to the accounts database, so Render fills in
+# DATABASE_URL itself (the database password never has to be copied by hand).
+# Matches the existing services' settings; only DATABASE_URL is new.
+services:
+  - type: web
+    name: tileo-multiplayer
+    runtime: node
+    plan: free
+    region: virginia
+    branch: main
+    autoDeploy: true
+    buildCommand: echo "No dependencies to install (ws is vendored)"
+    startCommand: node server/server.js
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://tileo-cruise.onrender.com
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tileo-accounts
+          property: connectionString
+
+databases:
+  - name: tileo-accounts
+    plan: free
+    region: virginia
+    databaseName: tileo_accounts
+    user: tileo_accounts_user
+    postgresMajorVersion: "17"
+    ipAllowList: []   # private network only, as now
